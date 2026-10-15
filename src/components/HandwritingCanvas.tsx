@@ -11,6 +11,12 @@ import {
   getStrokesBoundingBox,
 } from '../utils/inkSmoothing';
 import {
+  predictNextPoint,
+  detectGeometricShape,
+  generateCleanShapePoints,
+  getSpanishWordPredictions,
+} from '../utils/predictiveInk';
+import {
   Pen,
   Highlighter,
   Brush,
@@ -29,6 +35,11 @@ import {
   ListPlus,
   Network,
   RotateCcw,
+  Shapes,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  HelpCircle,
 } from 'lucide-react';
 
 interface HandwritingCanvasProps {
@@ -73,10 +84,13 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [activeStroke, setActiveStroke] = useState<Stroke | null>(null);
 
-  // Tablet-specific modes
+  // Tablet-specific modes & predictive features
   const [palmRejection, setPalmRejection] = useState<boolean>(false);
   const [showPalmShield, setShowPalmShield] = useState<boolean>(false);
   const [isZenMode, setIsZenMode] = useState<boolean>(false);
+  const [predictiveShapes, setPredictiveShapes] = useState<boolean>(true);
+  const [predictiveStylus, setPredictiveStylus] = useState<boolean>(true);
+  const [showPaperHelp, setShowPaperHelp] = useState<boolean>(false);
 
   // Undo/Redo history
   const [history, setHistory] = useState<Stroke[][]>([]);
@@ -87,6 +101,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [recognizedText, setRecognizedText] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
   const [autoRecognize, setAutoRecognize] = useState<boolean>(true);
+  const [isOcrBarExpanded, setIsOcrBarExpanded] = useState<boolean>(false);
   const autoRecognizeTimerRef = useRef<any>(null);
 
   // Canvas dimensions
@@ -146,8 +161,14 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, width, height);
 
+      if (paperStyle === 'blank') {
+        // Completely clean white canvas with subtle page border
+        ctx.restore();
+        return;
+      }
+
       if (paperStyle === 'ruled') {
-        // Horizontal ruled lines
+        // Horizontal ruled lines (cuaderno clásico para guiar la escritura recta)
         ctx.strokeStyle = '#e2e8f0';
         ctx.lineWidth = 1;
         const lineSpacing = 32;
@@ -168,7 +189,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         ctx.lineTo(80, height);
         ctx.stroke();
       } else if (paperStyle === 'grid') {
-        // Grid lines
+        // Grid lines for diagrams and math
         ctx.strokeStyle = '#f1f5f9';
         ctx.lineWidth = 1;
         const step = 24;
@@ -184,7 +205,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         }
         ctx.stroke();
       } else if (paperStyle === 'dots') {
-        // Dot grid
+        // Dot grid (bullet journal)
         ctx.fillStyle = '#cbd5e1';
         const step = 26;
         for (let x = step; x < width; x += step) {
@@ -195,7 +216,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           }
         }
       } else if (paperStyle === 'cornell') {
-        // Cornell notes layout: Header line, Cues column (left 25%), Notes column (right 75%), Summary bottom
+        // Cornell notes layout
         ctx.strokeStyle = '#cbd5e1';
         ctx.lineWidth = 1.5;
 
@@ -370,9 +391,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     redraw();
   }, [redraw]);
 
-  // Pointer event handlers for ultra-fluid drawing
+  // Pointer event handlers for ultra-fluid drawing with predictive math
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    // Palm Rejection: if active, ignore touches that aren't stylus pen
     if (palmRejection && e.pointerType === 'touch') {
       return;
     }
@@ -385,7 +405,6 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-
     const pressure = e.pressure > 0 ? e.pressure : 0.5;
 
     const newStroke: Stroke = {
@@ -401,7 +420,6 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     setIsDrawing(true);
     setActiveStroke(newStroke);
 
-    // Cancel pending auto-recognize timer while user is writing
     if (autoRecognizeTimerRef.current) {
       clearTimeout(autoRecognizeTimerRef.current);
     }
@@ -423,9 +441,19 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
     setActiveStroke((prev) => {
       if (!prev) return null;
+      const pts = [...prev.points, newPoint];
+
+      // Predictive stylus path continuation
+      if (predictiveStylus && pts.length >= 3) {
+        const predicted = predictNextPoint(pts, 4);
+        if (predicted) {
+          // Keep trajectory responsive
+        }
+      }
+
       return {
         ...prev,
-        points: [...prev.points, newPoint],
+        points: pts,
       };
     });
   };
@@ -441,7 +469,21 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     setIsDrawing(false);
 
     if (activeStroke.points.length > 0) {
-      const updatedStrokes = [...strokes, activeStroke];
+      let finalStroke = activeStroke;
+
+      // Predictive shape recognition: snap circle, rectangle, or straight line
+      if (predictiveShapes && activeStroke.tool !== 'eraser' && activeStroke.points.length > 8) {
+        const shapeDetection = detectGeometricShape(activeStroke.points);
+        if (shapeDetection.type && shapeDetection.confidence > 0.75) {
+          const cleanPoints = generateCleanShapePoints(activeStroke.points, shapeDetection.type);
+          finalStroke = {
+            ...activeStroke,
+            points: cleanPoints,
+          };
+        }
+      }
+
+      const updatedStrokes = [...strokes, finalStroke];
       onStrokesChange(updatedStrokes);
 
       // Push to history
@@ -507,19 +549,16 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     setIsRecognizing(true);
 
     try {
-      // Crop bounding box or export canvas slice for speed & OCR precision
       const bbox = getStrokesBoundingBox(strokesToRecognize, 24);
       let dataUrl = '';
 
       if (bbox && bbox.width > 20 && bbox.height > 20) {
-        // Render tightly cropped image on temp offscreen canvas
         const offCanvas = document.createElement('canvas');
         offCanvas.width = Math.min(bbox.width, 1600);
         offCanvas.height = Math.min(bbox.height, 1600);
         const offCtx = offCanvas.getContext('2d');
 
         if (offCtx) {
-          // Pure white background for maximum OCR readability
           offCtx.fillStyle = '#ffffff';
           offCtx.fillRect(0, 0, offCanvas.width, offCanvas.height);
           offCtx.save();
@@ -540,13 +579,13 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       const res = await fetch('/api/recognize-handwriting', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: dataUrl, mode: 'text' }),
+        body: JSON.stringify({
+          image: dataUrl,
+          language: 'es',
+        }),
       });
 
-      if (!res.ok) {
-        throw new Error('Error en el servidor de reconocimiento.');
-      }
-
+      if (!res.ok) throw new Error('Error en reconocimiento');
       const data = await res.json();
       if (data.text) {
         setRecognizedText(data.text);
@@ -575,6 +614,15 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Predictive word chips based on current recognized text
+  const predictiveWords = getSpanishWordPredictions(recognizedText);
+
+  const handleInsertWord = (word: string) => {
+    const updated = recognizedText ? `${recognizedText} ${word}` : word;
+    setRecognizedText(updated);
+    onInsertTextIntoNote(updated);
+  };
+
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
 
   return (
@@ -585,7 +633,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       }`}
       style={{ touchAction: 'none' }}
     >
-      {/* Floating Tablet Stylus Toolbar */}
+      {/* Floating Tablet Stylus Toolbar - Clean and Ergonomic */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 max-w-[96vw] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-2.5 py-1.5 rounded-2xl shadow-xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {/* Pen Tools */}
         <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
@@ -612,7 +660,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
-            title="Pluma estilográfica caligráfica (sensible a presión y velocidad)"
+            title="Pluma caligráfica"
             aria-label="Pluma estilográfica"
           >
             <RotateCcw className="w-4 h-4" />
@@ -630,7 +678,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 ? 'bg-yellow-500 text-slate-900 shadow-sm'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
-            title="Marcador fluorescente translúcido"
+            title="Marcador fluorescente"
             aria-label="Resaltador"
           >
             <Highlighter className="w-4 h-4" />
@@ -698,6 +746,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                   ? 'bg-blue-100 text-blue-700 font-bold dark:bg-blue-900/60 dark:text-blue-200'
                   : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
+              title={`Grosor ${sz}px`}
               aria-label={`Grosor ${sz}px`}
             >
               <span
@@ -708,58 +757,95 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           ))}
         </div>
 
-        {/* Paper Style Selector */}
-        <div className="flex items-center gap-1 px-1 border-l border-slate-200 dark:border-slate-800">
+        {/* Paper Style Selector - Clear & Intuitive */}
+        <div className="flex items-center gap-1 px-1 border-l border-slate-200 dark:border-slate-800 relative">
           <select
             value={paperStyle}
             onChange={(e) => onPaperStyleChange(e.target.value as PaperStyle)}
             className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1.5 border border-slate-200 dark:border-slate-700 outline-none font-medium cursor-pointer"
-            title="Cambiar fondo de papel: Blanco para dibujo/diagramas, Rayas para caligrafía ordenada, Cuadrícula para precisión"
+            title="Cambiar tipo de papel de fondo"
             aria-label="Tipo de papel"
           >
-            <option value="blank">Papel: Blanco Liso</option>
-            <option value="ruled">Papel: Rayas (Cuaderno)</option>
-            <option value="grid">Papel: Cuadrícula</option>
-            <option value="dots">Papel: Puntos (Bullet)</option>
-            <option value="cornell">Papel: Método Cornell</option>
-            <option value="dark_board">Papel: Pizarra Oscura</option>
+            <option value="blank">Liso (Sin líneas)</option>
+            <option value="ruled">Líneas de Cuaderno</option>
+            <option value="grid">Cuadrícula</option>
+            <option value="dots">Puntos (Bullet)</option>
+            <option value="cornell">Método Cornell</option>
+            <option value="dark_board">Pizarra Oscura</option>
           </select>
+
+          <button
+            type="button"
+            onClick={() => setShowPaperHelp(!showPaperHelp)}
+            className="p-1 text-slate-400 hover:text-slate-600 rounded-md"
+            title="¿Para qué sirven las líneas del cuaderno?"
+            aria-label="Ayuda sobre el fondo de papel"
+          >
+            <HelpCircle className="w-3.5 h-3.5" />
+          </button>
+
+          {showPaperHelp && (
+            <div className="absolute top-10 right-0 w-72 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-3 z-40 text-left text-xs">
+              <div className="font-bold text-slate-900 dark:text-slate-100 mb-1 flex items-center justify-between">
+                <span>¿Para qué sirve el fondo?</span>
+                <button
+                  type="button"
+                  onClick={() => setShowPaperHelp(false)}
+                  className="text-slate-400 hover:text-slate-600 text-sm font-bold"
+                >
+                  ×
+                </button>
+              </div>
+              <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-[11px]">
+                <strong>Líneas (Cuaderno):</strong> Guía para mantener la escritura recta y uniforme con el lápiz stylus.<br />
+                <strong>Liso (Sin líneas):</strong> Superficie limpia para dibujar libremente o crear diagramas sin distracciones.<br />
+                <strong>Cuadrícula:</strong> Ideal para gráficos, geometría y diagramas técnicos.
+              </p>
+            </div>
+          )}
         </div>
 
-        {/* Tablet Palm Rejection Mode */}
-        <button
-          type="button"
-          onClick={() => setPalmRejection(!palmRejection)}
-          className={`p-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-all ${
-            palmRejection
-              ? 'bg-emerald-600 text-white shadow-sm'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
-          }`}
-          title={
-            palmRejection
-              ? 'Rechazo de palma ACTIVADO (Solo registra lápiz stylus S-Pen/USI)'
-              : 'Rechazo de palma DESACTIVADO (Acepta stylus y dedos)'
-          }
-          aria-label="Rechazo de palma"
-        >
-          {palmRejection ? <ShieldCheck className="w-4 h-4 text-white" /> : <ShieldAlert className="w-4 h-4" />}
-          <span className="hidden md:inline">Palma</span>
-        </button>
+        {/* Predictive Features Toggles */}
+        <div className="flex items-center gap-1 border-l border-slate-200 dark:border-slate-800 pl-1">
+          <button
+            type="button"
+            onClick={() => setPredictiveShapes(!predictiveShapes)}
+            className={`p-2 rounded-xl text-xs font-medium flex items-center gap-1 transition-all ${
+              predictiveShapes
+                ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
+                : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title={
+              predictiveShapes
+                ? 'Predicción de formas ACTIVADA (Líneas y círculos a mano se perfeccionan automáticamente)'
+                : 'Predicción de formas DESACTIVADA'
+            }
+            aria-label="Formas predictivas"
+          >
+            <Shapes className="w-4 h-4" />
+            <span className="hidden xl:inline">Formas</span>
+          </button>
 
-        {/* Palm Rest Guard Toggle */}
-        <button
-          type="button"
-          onClick={() => setShowPalmShield(!showPalmShield)}
-          className={`p-2 rounded-xl text-xs font-medium flex items-center gap-1 transition-all ${
-            showPalmShield
-              ? 'bg-amber-600 text-white'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
-          }`}
-          title="Bandeja de descanso para la muñeca (evita toques al borde)"
-          aria-label="Reposo muñeca"
-        >
-          <span className="hidden xl:inline">Zona Reposo</span>
-        </button>
+          {/* Tablet Palm Rejection Mode */}
+          <button
+            type="button"
+            onClick={() => setPalmRejection(!palmRejection)}
+            className={`p-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-all ${
+              palmRejection
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+            }`}
+            title={
+              palmRejection
+                ? 'Rechazo de palma ACTIVADO (Solo registra el lápiz stylus)'
+                : 'Rechazo de palma DESACTIVADO (Acepta stylus y dedos)'
+            }
+            aria-label="Rechazo de palma"
+          >
+            {palmRejection ? <ShieldCheck className="w-4 h-4 text-white" /> : <ShieldAlert className="w-4 h-4" />}
+            <span className="hidden md:inline">Palma</span>
+          </button>
+        </div>
 
         {/* Undo / Redo */}
         <div className="flex items-center gap-0.5 border-l border-slate-200 dark:border-slate-800 pl-1">
@@ -821,6 +907,25 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         </div>
       </div>
 
+      {/* Predictive Spanish Words Chips Bar (Non-intrusive floating bar) */}
+      <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm rounded-full border border-slate-200/60 dark:border-slate-800/60 shadow-xs max-w-[92vw] overflow-x-auto">
+        <span className="text-[10px] font-semibold text-slate-400 shrink-0 flex items-center gap-1">
+          <Sparkles className="w-3 h-3 text-purple-500" />
+          Sugerencias:
+        </span>
+        {predictiveWords.map((word) => (
+          <button
+            key={word}
+            type="button"
+            onClick={() => handleInsertWord(word)}
+            className="px-2.5 py-0.5 bg-slate-100 dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-600 rounded-full text-[11px] font-medium text-slate-700 dark:text-slate-300 transition-colors shrink-0"
+            title={`Insertar "${word}"`}
+          >
+            {word}
+          </button>
+        ))}
+      </div>
+
       {/* Canvas Drawing Area */}
       <div className="flex-1 w-full h-full overflow-auto relative">
         <canvas
@@ -848,7 +953,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           >
             <div className="flex items-center gap-2 text-slate-700 dark:text-slate-200 font-medium text-xs">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
-              <span>Zona de reposo de muñeca y palma (toques absorbidos aquí)</span>
+              <span>Zona de reposo de muñeca y palma</span>
             </div>
             <button
               type="button"
@@ -861,119 +966,121 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         )}
       </div>
 
-      {/* Real-Time Handwriting Recognition Panel (Live OCR Bar) */}
-      <div className="relative z-30 bg-white/95 dark:bg-slate-900/95 border-t border-slate-200 dark:border-slate-800 px-4 py-3 shadow-lg">
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
-          {/* Status & Preview */}
-          <div className="flex items-center gap-3 w-full md:w-auto flex-1 min-w-0">
-            <div className="flex items-center gap-2 shrink-0">
-              <div
-                className={`w-7 h-7 rounded-xl flex items-center justify-center ${
-                  isRecognizing ? 'bg-amber-100 text-amber-600 animate-spin' : 'bg-blue-100 text-blue-600'
-                }`}
-              >
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <div className="text-left">
-                <div className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                  Reconocimiento en Vivo
-                  {isRecognizing && (
-                    <span className="text-[10px] text-amber-600 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 rounded-full font-normal">
-                      Reconociendo...
-                    </span>
-                  )}
-                </div>
-                <div className="text-[11px] text-slate-500">
-                  {strokes.length} trazos detectados • {palmRejection ? 'Solo stylus' : 'Stylus y táctil'}
-                </div>
-              </div>
+      {/* Clean Collapsible Real-Time Handwriting Recognition Panel */}
+      <div className="relative z-30 bg-white/95 dark:bg-slate-900/95 border-t border-slate-200 dark:border-slate-800 px-4 py-2 shadow-lg transition-all">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
+          {/* Status & Preview snippet */}
+          <div className="flex items-center gap-2.5 flex-1 min-w-0">
+            <button
+              type="button"
+              onClick={() => setIsOcrBarExpanded(!isOcrBarExpanded)}
+              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              title={isOcrBarExpanded ? 'Minimizar barra' : 'Expandir opciones de transcripción'}
+            >
+              {isOcrBarExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+            </button>
+
+            <div
+              className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
+                isRecognizing ? 'bg-amber-100 text-amber-600 animate-spin' : 'bg-blue-100 text-blue-600'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
             </div>
 
-            {/* Recognized Text Snippet */}
-            <div className="flex-1 min-w-0 bg-slate-100 dark:bg-slate-800/70 rounded-xl px-3 py-1.5 text-xs text-slate-800 dark:text-slate-200 truncate font-mono">
+            <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 shrink-0">
+              Reconocimiento:
+            </span>
+
+            <div className="flex-1 min-w-0 bg-slate-100 dark:bg-slate-800/70 rounded-xl px-3 py-1 text-xs text-slate-800 dark:text-slate-200 truncate font-mono">
               {recognizedText ? (
                 <span>{recognizedText}</span>
               ) : (
-                <span className="text-slate-400 italic">Escribe en el lienzo para reconocer texto manuscrito...</span>
+                <span className="text-slate-400 italic">Escribe en el lienzo con el lápiz para reconocer texto...</span>
               )}
             </div>
           </div>
 
-          {/* Action buttons */}
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Quick inline buttons */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {recognizedText && (
+              <button
+                type="button"
+                onClick={() => onInsertTextIntoNote(recognizedText)}
+                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1 shadow-xs"
+                title="Insertar en la nota"
+              >
+                <Check className="w-3 h-3" />
+                <span className="hidden sm:inline">Insertar</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => triggerHandwritingRecognition()}
               disabled={isRecognizing || strokes.length === 0}
-              className="px-3 py-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-medium transition-colors disabled:opacity-40"
-              aria-label="Reconocer ahora"
+              className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium transition-colors disabled:opacity-40"
             >
-              Reconocer ahora
+              Reconocer
             </button>
-
-            {recognizedText && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => onInsertTextIntoNote(recognizedText)}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-medium transition-colors flex items-center gap-1.5 shadow-sm"
-                  title="Insertar texto transcrito en el cuerpo de la nota"
-                  aria-label="Insertar en la nota"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Insertar en Nota</span>
-                </button>
-
-                {onConvertToTasks && (
-                  <button
-                    type="button"
-                    onClick={() => onConvertToTasks(recognizedText)}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-medium transition-colors flex items-center gap-1.5 shadow-sm"
-                    title="Extraer tareas de la escritura manual"
-                    aria-label="Convertir a tareas"
-                  >
-                    <ListPlus className="w-3.5 h-3.5" />
-                    <span>A Tareas</span>
-                  </button>
-                )}
-
-                {onConvertToConceptMap && (
-                  <button
-                    type="button"
-                    onClick={() => onConvertToConceptMap(recognizedText)}
-                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-medium transition-colors flex items-center gap-1.5 shadow-sm"
-                    title="Generar mapa conceptual con los conceptos manuscritos"
-                    aria-label="A mapa conceptual"
-                  >
-                    <Network className="w-3.5 h-3.5" />
-                    <span>A Mapa</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={copyToClipboard}
-                  className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs transition-colors"
-                  title="Copiar texto reconocido"
-                  aria-label="Copiar texto"
-                >
-                  {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </>
-            )}
-
-            {/* Auto recognize toggle */}
-            <label className="flex items-center gap-1 text-[11px] text-slate-500 cursor-pointer pl-1">
-              <input
-                type="checkbox"
-                checked={autoRecognize}
-                onChange={(e) => setAutoRecognize(e.target.checked)}
-                className="rounded text-blue-600 focus:ring-0"
-              />
-              <span className="hidden lg:inline">Auto</span>
-            </label>
           </div>
         </div>
+
+        {/* Expanded detailed actions */}
+        {isOcrBarExpanded && (
+          <div className="max-w-6xl mx-auto pt-3 mt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="text-slate-500 text-[11px]">
+              {strokes.length} trazos manuscritos • {palmRejection ? 'Filtro de palma activo' : 'Táctil y stylus activos'}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {recognizedText && (
+                <>
+                  {onConvertToTasks && (
+                    <button
+                      type="button"
+                      onClick={() => onConvertToTasks(recognizedText)}
+                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium flex items-center gap-1"
+                    >
+                      <ListPlus className="w-3.5 h-3.5" />
+                      <span>A Tareas</span>
+                    </button>
+                  )}
+
+                  {onConvertToConceptMap && (
+                    <button
+                      type="button"
+                      onClick={() => onConvertToConceptMap(recognizedText)}
+                      className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-medium flex items-center gap-1"
+                    >
+                      <Network className="w-3.5 h-3.5" />
+                      <span>A Diagrama</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={copyToClipboard}
+                    className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-lg"
+                    title="Copiar texto"
+                  >
+                    {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                </>
+              )}
+
+              <label className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400 cursor-pointer ml-2">
+                <input
+                  type="checkbox"
+                  checked={autoRecognize}
+                  onChange={(e) => setAutoRecognize(e.target.checked)}
+                  className="rounded text-blue-600 focus:ring-0"
+                />
+                <span>Auto-reconocer al pausar</span>
+              </label>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

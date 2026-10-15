@@ -135,16 +135,16 @@ export const TabletNavbar: React.FC<TabletNavbarProps> = ({
           <button
             type="button"
             onClick={onToggleRightPane}
-            className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
               isRightPaneOpen
                 ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
-            title={isRightPaneOpen ? 'Ocultar panel de texto' : 'Mostrar panel de texto y transcripciones'}
-            aria-label={isRightPaneOpen ? 'Ocultar texto' : 'Mostrar texto'}
+            title={isRightPaneOpen ? 'Minimizar texto (Solo Lienzo)' : 'Ver Ambos (Lienzo + Texto lado a lado)'}
+            aria-label={isRightPaneOpen ? 'Minimizar texto' : 'Ver ambos'}
           >
-            {isRightPaneOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
-            <span className="hidden lg:inline">{isRightPaneOpen ? 'Ocultar Texto' : 'Ver Texto'}</span>
+            {isRightPaneOpen ? <PanelRightClose className="w-4 h-4" /> : <Columns2 className="w-4 h-4" />}
+            <span className="hidden lg:inline">{isRightPaneOpen ? 'Solo Lienzo' : 'Ver Ambos'}</span>
           </button>
         )}
 

@@ -13,6 +13,8 @@ import {
   Loader2,
 } from 'lucide-react';
 
+import { predictPunctuation } from '../utils/predictiveInk';
+
 interface VoiceAudioRecorderProps {
   isOpen: boolean;
   onClose: () => void;
@@ -71,7 +73,8 @@ export const VoiceAudioRecorder: React.FC<VoiceAudioRecorderProps> = ({
         }
 
         if (currentFinal) {
-          setFinalTranscript((prev) => (prev ? prev + ' ' + currentFinal : currentFinal));
+          const cleanPunct = predictPunctuation(currentFinal);
+          setFinalTranscript((prev) => (prev ? prev + ' ' + cleanPunct : cleanPunct));
         }
         setLiveTranscript(interim);
       };

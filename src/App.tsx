@@ -21,6 +21,7 @@ import { TodoList } from './components/TodoList';
 import { VoiceAudioRecorder } from './components/VoiceAudioRecorder';
 import { extractTasksFromText } from './utils/taskManager';
 import { textLinesToConceptNodes } from './utils/conceptMap';
+import { PanelLeftOpen } from 'lucide-react';
 
 export default function App() {
   // State with LocalStorage persistence & clean start check
@@ -345,6 +346,22 @@ export default function App() {
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
         />
+
+        {/* Floating edge tab to open left sidebar when minimized */}
+        {!isSidebarOpen && (
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen(true)}
+            className="absolute top-1/2 -translate-y-1/2 left-0 z-30 bg-white/95 dark:bg-slate-900/95 border border-l-0 border-slate-200 dark:border-slate-800 shadow-md py-3 px-1.5 rounded-r-xl text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 flex flex-col items-center gap-1.5 transition-all select-none"
+            title="Abrir menú de cuadernos y organizador"
+            aria-label="Abrir menú"
+          >
+            <PanelLeftOpen className="w-4 h-4" />
+            <span className="text-[10px] [writing-mode:vertical-rl] font-semibold tracking-wider">
+              Menú
+            </span>
+          </button>
+        )}
 
         {/* View Router */}
         <main className="flex-1 h-full flex flex-col overflow-hidden relative">

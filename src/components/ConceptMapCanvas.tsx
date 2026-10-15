@@ -15,11 +15,14 @@ import {
   Diamond,
   Database,
   Cloud,
-  Layers,
-  ArrowRight,
-  GitBranch,
-  Server,
   Workflow,
+  Server,
+  GitBranch,
+  ArrowDown,
+  ArrowRight,
+  Maximize2,
+  Minimize2,
+  Grid,
 } from 'lucide-react';
 
 interface ConceptMapCanvasProps {
@@ -51,9 +54,10 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
   // Diagram type (mindmap, flowchart, architecture)
   const currentDiagramType: DiagramType = graph.diagramType || 'flowchart';
 
-  // Dragging state
+  // Dragging state & Grid Snapping
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
 
   // Connection creation mode
   const [connectingSourceId, setConnectingSourceId] = useState<string | null>(null);
@@ -119,15 +123,20 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
     });
   };
 
-  // Dragging nodes or panning container
+  // Dragging nodes or panning container with 20px grid snapping
   const handlePointerMove = (e: React.PointerEvent) => {
     if (draggingNodeId) {
-      const newX = Math.round(e.clientX / zoom - dragOffset.x);
-      const newY = Math.round(e.clientY / zoom - dragOffset.y);
+      let rawX = Math.round(e.clientX / zoom - dragOffset.x);
+      let rawY = Math.round(e.clientY / zoom - dragOffset.y);
+
+      if (snapToGrid) {
+        rawX = Math.round(rawX / 20) * 20;
+        rawY = Math.round(rawY / 20) * 20;
+      }
 
       const updatedNodes = graph.nodes.map((node) => {
         if (node.id === draggingNodeId) {
-          return { ...node, x: newX, y: newY };
+          return { ...node, x: rawX, y: rawY };
         }
         return node;
       });
@@ -161,7 +170,7 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
   };
 
   // Add new node with default shape per diagram type
-  const handleAddNode = (shapeOverride?: NodeShape) => {
+  const handleAddNode = (shapeOverride?: NodeShape, customLabel?: string, posX?: number, posY?: number) => {
     const id = `node-${Date.now()}`;
     const defaultShape: NodeShape =
       shapeOverride ||
@@ -172,7 +181,8 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
         : 'rounded');
 
     const defaultLabel =
-      defaultShape === 'diamond'
+      customLabel ||
+      (defaultShape === 'diamond'
         ? '¿Condición?'
         : defaultShape === 'cylinder'
         ? 'Base de Datos'
@@ -180,14 +190,14 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
         ? 'Servicio Cloud'
         : defaultShape === 'circle'
         ? 'Inicio / Fin'
-        : 'Nuevo Bloque';
+        : 'Nuevo Bloque');
 
     const newNode: ConceptNode = {
       id,
       label: defaultLabel,
       description: '',
-      x: Math.round(400 - pan.x / zoom),
-      y: Math.round(250 - pan.y / zoom),
+      x: posX !== undefined ? posX : Math.round(400 - pan.x / zoom),
+      y: posY !== undefined ? posY : Math.round(250 - pan.y / zoom),
       color: NODE_COLORS[graph.nodes.length % NODE_COLORS.length],
       shape: defaultShape,
     };
@@ -197,6 +207,54 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
       nodes: [...graph.nodes, newNode],
     });
     setSelectedNodeId(id);
+    return id;
+  };
+
+  // Fluid one-touch node expansion: add connected node downwards or rightwards
+  const handleAddConnectedNode = (parentNode: ConceptNode, direction: 'down' | 'right') => {
+    const newX = direction === 'right' ? parentNode.x + 220 : parentNode.x;
+    const newY = direction === 'down' ? parentNode.y + 140 : parentNode.y;
+
+    const childId = `node-${Date.now()}`;
+    const nextShape: NodeShape =
+      currentDiagramType === 'flowchart'
+        ? parentNode.shape === 'diamond' ? 'rectangle' : 'rectangle'
+        : parentNode.shape || 'rounded';
+
+    const childNode: ConceptNode = {
+      id: childId,
+      label: currentDiagramType === 'flowchart' ? 'Siguiente Paso' : 'Nuevo Componente',
+      description: '',
+      x: newX,
+      y: newY,
+      color: NODE_COLORS[(graph.nodes.length + 1) % NODE_COLORS.length],
+      shape: nextShape,
+    };
+
+    const newEdge: ConceptEdge = {
+      id: `edge-${Date.now()}`,
+      sourceId: parentNode.id,
+      targetId: childId,
+      label: direction === 'down' ? 'siguiente' : 'conecta',
+    };
+
+    onGraphChange({
+      ...graph,
+      nodes: [...graph.nodes, childNode],
+      edges: [...graph.edges, newEdge],
+    });
+    setSelectedNodeId(childId);
+  };
+
+  // Clear diagram completely
+  const handleClearDiagram = () => {
+    onGraphChange({
+      ...graph,
+      nodes: [],
+      edges: [],
+    });
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
   };
 
   // Quick preset templates for rapid diagramming
@@ -205,9 +263,9 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
       const nodes: ConceptNode[] = [
         { id: 'fc-1', label: 'Inicio', description: 'Comienza el proceso', x: 450, y: 100, color: '#10b981', shape: 'circle' },
         { id: 'fc-2', label: 'Ingresar Datos', description: 'Usuario escribe notas con stylus', x: 450, y: 220, color: '#3b82f6', shape: 'rectangle' },
-        { id: 'fc-3', label: '¿Reconocer Texto?', description: '¿Tiene trazos manuscritos?', x: 450, y: 350, color: '#f59e0b', shape: 'diamond' },
-        { id: 'fc-4', label: 'Procesar con IA (OCR)', description: 'Transcribe a texto digital', x: 680, y: 350, color: '#8b5cf6', shape: 'rectangle' },
-        { id: 'fc-5', label: 'Guardar en Tablet', description: 'Almacenamiento local seguro', x: 450, y: 490, color: '#10b981', shape: 'circle' },
+        { id: 'fc-3', label: '¿Reconocer Texto?', description: '¿Tiene trazos manuscritos?', x: 450, y: 360, color: '#f59e0b', shape: 'diamond' },
+        { id: 'fc-4', label: 'Procesar con IA (OCR)', description: 'Transcribe a texto digital', x: 700, y: 360, color: '#8b5cf6', shape: 'rectangle' },
+        { id: 'fc-5', label: 'Guardar en Tablet', description: 'Almacenamiento local seguro', x: 450, y: 500, color: '#10b981', shape: 'circle' },
       ];
       const edges: ConceptEdge[] = [
         { id: 'fe-1', sourceId: 'fc-1', targetId: 'fc-2', label: 'inicia' },
@@ -264,18 +322,16 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
   // Auto layout / Tidy up
   const handleAutoLayout = () => {
     if (currentDiagramType === 'flowchart') {
-      // Top-to-bottom layout
       const spacingY = 120;
       const startY = 100;
       const centerX = 450;
       const updated = graph.nodes.map((node, idx) => ({
         ...node,
-        x: centerX + (idx % 2 === 0 ? 0 : 30),
+        x: centerX + (idx % 2 === 0 ? 0 : 20),
         y: startY + idx * spacingY,
       }));
       onGraphChange({ ...graph, nodes: updated });
     } else {
-      // Radial or balanced layout
       const laidOut = autoLayoutNodes(graph.nodes, 450, 300, 220);
       onGraphChange({ ...graph, nodes: laidOut });
     }
@@ -329,15 +385,15 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full bg-slate-50/80 dark:bg-slate-950 overflow-hidden select-none cursor-grab active:cursor-grabbing bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] dark:bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px]"
+      className="relative w-full h-full bg-slate-50/80 dark:bg-slate-950 overflow-hidden select-none cursor-grab active:cursor-grabbing bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] dark:bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px]"
       onPointerDown={handleCanvasPointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       style={{ touchAction: 'none' }}
     >
-      {/* Top Diagram Toolbar */}
+      {/* Top Diagram Toolbar - Clean, Organized & Tablet-Friendly */}
       <div className="absolute top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-        {/* Left: Title & Diagram Mode Selector */}
+        {/* Left: Title & Mode Selector */}
         <div className="pointer-events-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-800 flex items-center gap-2">
           <input
             type="text"
@@ -360,7 +416,7 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
               }`}
               title="Modo Diagrama de Flujo (procesos y decisiones)"
             >
-              <Workflow className="w-3 h-3" />
+              <Workflow className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Flujo</span>
             </button>
             <button
@@ -371,9 +427,9 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
                   ? 'bg-white dark:bg-slate-900 text-purple-600 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400'
               }`}
-              title="Modo Diagrama de Arquitectura (sistemas, clientes, servidores, bases de datos)"
+              title="Modo Diagrama de Arquitectura (servidores, APIs, BD, clientes)"
             >
-              <Server className="w-3 h-3" />
+              <Server className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Arquitectura</span>
             </button>
             <button
@@ -384,9 +440,9 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
                   ? 'bg-white dark:bg-slate-900 text-emerald-600 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400'
               }`}
-              title="Modo Mapa Mental (conceptos e ideas)"
+              title="Modo Mapa Mental (ideas y conceptos)"
             >
-              <GitBranch className="w-3 h-3" />
+              <GitBranch className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Mental</span>
             </button>
           </div>
@@ -443,8 +499,21 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
             </button>
           </div>
 
-          {/* Plantillas de 1 toque */}
+          {/* Grid Snap & Presets */}
           <div className="flex items-center gap-1 pl-1">
+            <button
+              type="button"
+              onClick={() => setSnapToGrid(!snapToGrid)}
+              className={`p-1.5 rounded-lg text-xs font-medium transition-colors ${
+                snapToGrid
+                  ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400'
+                  : 'text-slate-400 hover:bg-slate-100'
+              }`}
+              title={snapToGrid ? 'Alineación automática a cuadrícula ACTIVADA' : 'Alineación a cuadrícula DESACTIVADA'}
+            >
+              <Grid className="w-4 h-4" />
+            </button>
+
             <button
               type="button"
               onClick={() => handleLoadPreset(currentDiagramType)}
@@ -472,7 +541,18 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
               title="Generar diagrama con IA desde el texto o título"
             >
               <Sparkles className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
-              <span className="hidden md:inline">{isGenerating ? 'Generando...' : 'IA Diagrama'}</span>
+              <span className="hidden md:inline">{isGenerating ? 'Generando...' : 'IA'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleClearDiagram}
+              disabled={graph.nodes.length === 0}
+              className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg text-xs disabled:opacity-30"
+              title="Limpiar diagrama completo"
+              aria-label="Limpiar diagrama"
+            >
+              <Trash2 className="w-4 h-4" />
             </button>
 
             <button
@@ -600,7 +680,7 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
               Lienzo de Diagramas Limpio
             </h3>
             <p className="text-xs text-slate-500 mt-1 mb-4 leading-relaxed">
-              Crea diagramas de flujo, arquitectura de sistemas o mapas mentales usando las figuras de arriba o carga una plantilla.
+              Crea diagramas de flujo, de arquitectura o mapas mentales con fluidez. Toca una forma arriba o carga una plantilla.
             </p>
             <div className="flex items-center justify-center gap-2">
               <button
@@ -707,6 +787,39 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
                     {node.description}
                   </div>
                 )}
+
+                {/* Quick direction expand buttons when selected for fluid workflow */}
+                {isSelected && (
+                  <div className="mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px]">
+                    <span className="text-slate-400">Crear conectado:</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAddConnectedNode(node, 'down');
+                        }}
+                        className="px-1.5 py-0.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded flex items-center gap-0.5 font-medium"
+                        title="Añadir siguiente paso hacia abajo"
+                      >
+                        <ArrowDown className="w-3 h-3" />
+                        <span>Abajo</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAddConnectedNode(node, 'right');
+                        }}
+                        className="px-1.5 py-0.5 bg-purple-50 text-purple-600 hover:bg-purple-100 rounded flex items-center gap-0.5 font-medium"
+                        title="Añadir bloque conectado a la derecha"
+                      >
+                        <ArrowRight className="w-3 h-3" />
+                        <span>Derecha</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })
@@ -780,19 +893,19 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
                         nodes: graph.nodes.map((n) => (n.id === activeNode.id ? { ...n, shape: shp } : n)),
                       });
                     }}
-                    className={`p-1.5 rounded-lg border text-xs flex items-center justify-center transition-all ${
-                      (activeNode.shape || 'rounded') === shp
-                        ? 'bg-blue-100 border-blue-500 text-blue-700 dark:bg-blue-900/60'
-                        : 'border-slate-200 text-slate-600 hover:bg-slate-100'
+                    className={`p-1.5 rounded-lg border text-xs flex items-center justify-center ${
+                      activeNode.shape === shp
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/60 text-blue-600'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-600'
                     }`}
                     title={shp}
                   >
-                    {shp === 'rectangle' && <Square className="w-3.5 h-3.5" />}
-                    {shp === 'rounded' && <span className="w-3.5 h-2.5 rounded-md border border-current" />}
-                    {shp === 'diamond' && <Diamond className="w-3.5 h-3.5" />}
-                    {shp === 'cylinder' && <Database className="w-3.5 h-3.5" />}
+                    {shp === 'rectangle' && <Square className="w-3 h-3" />}
+                    {shp === 'rounded' && <Workflow className="w-3 h-3" />}
+                    {shp === 'diamond' && <Diamond className="w-3 h-3" />}
+                    {shp === 'cylinder' && <Database className="w-3 h-3" />}
                     {shp === 'cloud' && <Cloud className="w-3.5 h-3.5" />}
-                    {shp === 'circle' && <Circle className="w-3.5 h-3.5" />}
+                    {shp === 'circle' && <Circle className="w-3 h-3" />}
                   </button>
                 ))}
               </div>
@@ -800,55 +913,56 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
 
             {/* Color Palette */}
             <div>
-              <label className="text-[11px] font-medium text-slate-500 block mb-1">Color de acento</label>
+              <label className="text-[11px] font-medium text-slate-500 block mb-1">Color del Bloque</label>
               <div className="flex items-center gap-1.5">
-                {NODE_COLORS.map((c) => (
+                {NODE_COLORS.map((color) => (
                   <button
-                    key={c}
+                    key={color}
                     type="button"
                     onClick={() => {
                       onGraphChange({
                         ...graph,
-                        nodes: graph.nodes.map((n) => (n.id === activeNode.id ? { ...n, color: c } : n)),
+                        nodes: graph.nodes.map((n) => (n.id === activeNode.id ? { ...n, color } : n)),
                       });
                     }}
                     className={`w-5 h-5 rounded-full transition-transform ${
-                      activeNode.color === c ? 'scale-125 ring-2 ring-blue-500 ring-offset-2' : 'hover:scale-110'
+                      activeNode.color === color ? 'scale-125 ring-2 ring-blue-500 ring-offset-1' : 'hover:scale-110'
                     }`}
-                    style={{ backgroundColor: c }}
-                    aria-label={`Color ${c}`}
+                    style={{ backgroundColor: color }}
+                    aria-label={`Color ${color}`}
                   />
                 ))}
               </div>
             </div>
 
-            <div className="pt-2 flex items-center justify-between border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => setConnectingSourceId(activeNode.id)}
-                className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-              >
-                <LinkIcon className="w-3.5 h-3.5" />
-                <span>Trazar Flecha</span>
-              </button>
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
               <button
                 type="button"
                 onClick={() => handleDeleteNode(activeNode.id)}
-                className="text-xs text-rose-600 hover:text-rose-700 font-medium flex items-center gap-1"
+                className="text-xs text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-1"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>Eliminar</span>
+                <span>Eliminar bloque</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setConnectingSourceId(activeNode.id)}
+                className="px-2.5 py-1 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 rounded-lg text-xs font-semibold flex items-center gap-1"
+              >
+                <LinkIcon className="w-3 h-3" />
+                <span>Conectar</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Selected Edge Editor Drawer */}
+      {/* Edge Inspector */}
       {selectedEdgeId && (
-        <div className="absolute bottom-4 left-4 z-30 w-72 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 p-3">
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-slate-800">
-            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">Editar Flecha</span>
+        <div className="absolute bottom-4 left-4 z-30 w-72 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-3">
+          <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-slate-100 dark:border-slate-800">
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Editar Conexión</span>
             <button
               type="button"
               onClick={() => setSelectedEdgeId(null)}
@@ -857,70 +971,38 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
               Cerrar
             </button>
           </div>
-          {(() => {
-            const edge = graph.edges.find((e) => e.id === selectedEdgeId);
-            if (!edge) return null;
-            return (
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  value={edge.label || ''}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    onGraphChange({
-                      ...graph,
-                      edges: graph.edges.map((eg) => (eg.id === edge.id ? { ...eg, label: val } : eg)),
-                    });
-                  }}
-                  className="w-full text-xs px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200"
-                  placeholder="Texto (ej: Sí, No, solicita, guarda)"
-                  aria-label="Texto de la flecha"
-                />
-                <button
-                  type="button"
-                  onClick={() => handleDeleteEdge(edge.id)}
-                  className="w-full text-xs py-1 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg"
-                >
-                  Eliminar Flecha
-                </button>
-              </div>
-            );
-          })()}
+
+          <div className="space-y-2">
+            <div>
+              <label className="text-[10px] font-medium text-slate-500 block mb-0.5">Etiqueta de relación</label>
+              <input
+                type="text"
+                value={graph.edges.find((e) => e.id === selectedEdgeId)?.label || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  onGraphChange({
+                    ...graph,
+                    edges: graph.edges.map((edge) => (edge.id === selectedEdgeId ? { ...edge, label: val } : edge)),
+                  });
+                }}
+                className="w-full text-xs font-medium px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder="siguiente, conecta con, envía..."
+              />
+            </div>
+
+            <div className="pt-1 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => handleDeleteEdge(selectedEdgeId)}
+                className="text-xs text-rose-600 hover:text-rose-700 flex items-center gap-1 font-medium"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Eliminar flecha</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
-
-      {/* Bottom Center Zoom & Pan reset */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3 py-1 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-800 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setZoom((z) => Math.max(0.4, z - 0.1))}
-          className="w-6 h-6 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-700 dark:text-slate-300"
-          title="Alejar"
-          aria-label="Alejar"
-        >
-          -
-        </button>
-        <span className="text-[11px] font-mono text-slate-500 w-10 text-center">{Math.round(zoom * 100)}%</span>
-        <button
-          type="button"
-          onClick={() => setZoom((z) => Math.min(2.0, z + 0.1))}
-          className="w-6 h-6 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-700 dark:text-slate-300"
-          title="Acercar"
-          aria-label="Acercar"
-        >
-          +
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setZoom(1.0);
-            setPan({ x: 0, y: 0 });
-          }}
-          className="text-[11px] px-1.5 py-0.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md"
-        >
-          Reset
-        </button>
-      </div>
     </div>
   );
 };
