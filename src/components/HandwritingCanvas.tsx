@@ -713,15 +713,16 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           <select
             value={paperStyle}
             onChange={(e) => onPaperStyleChange(e.target.value as PaperStyle)}
-            className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1.5 border border-slate-200 dark:border-slate-700 outline-none"
+            className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1.5 border border-slate-200 dark:border-slate-700 outline-none font-medium cursor-pointer"
+            title="Cambiar fondo de papel: Blanco para dibujo/diagramas, Rayas para caligrafía ordenada, Cuadrícula para precisión"
             aria-label="Tipo de papel"
           >
-            <option value="ruled">Rayas (Cuaderno)</option>
-            <option value="grid">Cuadrícula</option>
-            <option value="dots">Puntos (Bullet)</option>
-            <option value="cornell">Método Cornell</option>
-            <option value="blank">Blanco liso</option>
-            <option value="dark_board">Pizarra oscura</option>
+            <option value="blank">Papel: Blanco Liso</option>
+            <option value="ruled">Papel: Rayas (Cuaderno)</option>
+            <option value="grid">Papel: Cuadrícula</option>
+            <option value="dots">Papel: Puntos (Bullet)</option>
+            <option value="cornell">Papel: Método Cornell</option>
+            <option value="dark_board">Papel: Pizarra Oscura</option>
           </select>
         </div>
 

@@ -62,6 +62,9 @@ export interface TaskItem {
   completedAt?: number;
 }
 
+export type DiagramType = 'mindmap' | 'flowchart' | 'architecture';
+export type NodeShape = 'rectangle' | 'rounded' | 'diamond' | 'cylinder' | 'cloud' | 'circle';
+
 export interface ConceptNode {
   id: string;
   label: string;
@@ -69,6 +72,7 @@ export interface ConceptNode {
   x: number;
   y: number;
   color: string;
+  shape?: NodeShape;
   width?: number;
   height?: number;
 }
@@ -83,6 +87,7 @@ export interface ConceptEdge {
 export interface ConceptGraph {
   id: string;
   title: string;
+  diagramType?: DiagramType;
   noteId?: string;
   nodes: ConceptNode[];
   edges: ConceptEdge[];

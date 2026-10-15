@@ -6,11 +6,12 @@ import {
   Network,
   CheckCircle2,
   Mic,
-  Maximize2,
-  Minimize2,
   Share2,
-  Save,
-  Tag as TagIcon,
+  Columns2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
 } from 'lucide-react';
 
 interface TabletNavbarProps {
@@ -19,7 +20,10 @@ interface TabletNavbarProps {
   activeNote: NoteItem | null;
   onNoteTitleChange: (newTitle: string) => void;
   notebooks: Notebook[];
+  isSidebarOpen: boolean;
   onToggleSidebar: () => void;
+  isRightPaneOpen: boolean;
+  onToggleRightPane: () => void;
   onOpenVoiceRecorder: () => void;
   onExportNote: () => void;
 }
@@ -30,7 +34,10 @@ export const TabletNavbar: React.FC<TabletNavbarProps> = ({
   activeNote,
   onNoteTitleChange,
   notebooks,
+  isSidebarOpen,
   onToggleSidebar,
+  isRightPaneOpen,
+  onToggleRightPane,
   onOpenVoiceRecorder,
   onExportNote,
 }) => {
@@ -39,15 +46,20 @@ export const TabletNavbar: React.FC<TabletNavbarProps> = ({
   return (
     <header className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 md:px-5 flex items-center justify-between gap-3 z-30 select-none">
       {/* Left: Sidebar Toggle & Note Title */}
-      <div className="flex items-center gap-3 flex-1 min-w-0">
+      <div className="flex items-center gap-2.5 flex-1 min-w-0">
         <button
           type="button"
           onClick={onToggleSidebar}
-          className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          title="Alternar organizador / carpetas"
-          aria-label="Abrir menú"
+          className={`p-2 rounded-xl transition-all flex items-center gap-1.5 text-xs font-semibold ${
+            isSidebarOpen
+              ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+          title={isSidebarOpen ? 'Ocultar menú izquierdo' : 'Mostrar menú izquierdo (Organizador)'}
+          aria-label={isSidebarOpen ? 'Ocultar menú' : 'Mostrar menú'}
         >
-          <Menu className="w-5 h-5" />
+          {isSidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
+          <span className="hidden xl:inline">{isSidebarOpen ? 'Ocultar Menú' : 'Ver Menú'}</span>
         </button>
 
         {activeNote && (
@@ -71,7 +83,7 @@ export const TabletNavbar: React.FC<TabletNavbarProps> = ({
         )}
       </div>
 
-      {/* Center: Tablet Tab Selector */}
+      {/* Center: Tablet Mode Selector */}
       <nav className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl border border-slate-200/80 dark:border-slate-700/60 shadow-xs">
         <button
           type="button"
@@ -95,10 +107,10 @@ export const TabletNavbar: React.FC<TabletNavbarProps> = ({
               ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-sm'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
           }`}
-          aria-label="Pestaña Mapa Conceptual"
+          aria-label="Pestaña Diagramas y Mapas"
         >
           <Network className="w-4 h-4" />
-          <span className="hidden sm:inline">Mapa Conceptual</span>
+          <span className="hidden sm:inline">Diagramas & Mapas</span>
         </button>
 
         <button
@@ -118,6 +130,24 @@ export const TabletNavbar: React.FC<TabletNavbarProps> = ({
 
       {/* Right: Actions */}
       <div className="flex items-center gap-1.5">
+        {/* Toggle Right Text Pane (only in Canvas mode) */}
+        {activeTab === 'canvas' && (
+          <button
+            type="button"
+            onClick={onToggleRightPane}
+            className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              isRightPaneOpen
+                ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title={isRightPaneOpen ? 'Ocultar panel de texto' : 'Mostrar panel de texto y transcripciones'}
+            aria-label={isRightPaneOpen ? 'Ocultar texto' : 'Mostrar texto'}
+          >
+            {isRightPaneOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+            <span className="hidden lg:inline">{isRightPaneOpen ? 'Ocultar Texto' : 'Ver Texto'}</span>
+          </button>
+        )}
+
         {/* Voice dictation button */}
         <button
           type="button"
@@ -127,7 +157,7 @@ export const TabletNavbar: React.FC<TabletNavbarProps> = ({
           aria-label="Dictar por voz"
         >
           <Mic className="w-4 h-4" />
-          <span className="hidden lg:inline">Voz</span>
+          <span className="hidden md:inline">Voz</span>
         </button>
 
         {/* Export / Share */}

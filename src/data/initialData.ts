@@ -18,7 +18,7 @@ export const initialNotes: NoteItem[] = [
     title: 'Mi Primera Nota',
     content: '',
     strokes: [],
-    paperStyle: 'ruled',
+    paperStyle: 'blank',
     notebookId: 'nb-general',
     tags: [],
     isPinned: false,
@@ -33,7 +33,8 @@ export const initialTasks: TaskItem[] = [];
 
 export const initialConceptGraph: ConceptGraph = {
   id: 'graph-1',
-  title: 'Mi Primer Mapa Conceptual',
+  title: 'Mi Primer Diagrama',
+  diagramType: 'flowchart',
   nodes: [],
   edges: [],
 };

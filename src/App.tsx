@@ -93,6 +93,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('canvas');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+  const [isRightPaneOpen, setIsRightPaneOpen] = useState<boolean>(false);
   const [isVoiceRecorderOpen, setIsVoiceRecorderOpen] = useState<boolean>(false);
 
   // Persistence effects
@@ -313,7 +314,10 @@ export default function App() {
         activeNote={activeNote}
         onNoteTitleChange={(title) => handleUpdateActiveNote({ title, updatedAt: Date.now() })}
         notebooks={notebooks}
+        isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        isRightPaneOpen={isRightPaneOpen}
+        onToggleRightPane={() => setIsRightPaneOpen(!isRightPaneOpen)}
         onOpenVoiceRecorder={() => setIsVoiceRecorderOpen(true)}
         onExportNote={handleExportNote}
       />
@@ -349,6 +353,8 @@ export default function App() {
               <NoteEditorView
                 note={activeNote}
                 onUpdateNote={handleUpdateActiveNote}
+                isRightPaneOpen={isRightPaneOpen}
+                onToggleRightPane={() => setIsRightPaneOpen(!isRightPaneOpen)}
                 onConvertToTasks={handleConvertToTasks}
                 onConvertToConceptMap={handleConvertToConceptMap}
               />

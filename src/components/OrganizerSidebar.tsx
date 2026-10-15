@@ -84,13 +84,13 @@ export const OrganizerSidebar: React.FC<OrganizerSidebarProps> = ({
     setIsCreatingNotebook(false);
   };
 
+  if (!isOpen) return null;
+
   return (
     <aside
-      className={`fixed md:relative inset-y-0 left-0 z-40 w-80 md:w-88 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col transition-transform duration-200 ${
-        isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-      }`}
+      className="fixed md:relative inset-y-0 left-0 z-40 w-80 md:w-88 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 shadow-lg md:shadow-none transition-all duration-200"
     >
-      {/* Top Header: App Branding & New Note Button */}
+      {/* Top Header: App Branding & Close / New Note Buttons */}
       <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-sm">
@@ -104,15 +104,27 @@ export const OrganizerSidebar: React.FC<OrganizerSidebarProps> = ({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => onCreateNote(selectedNotebookId || undefined)}
-          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1 shadow-sm transition-colors"
-          aria-label="Nueva nota"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Nueva</span>
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => onCreateNote(selectedNotebookId || undefined)}
+            className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1 shadow-sm transition-colors"
+            aria-label="Nueva nota"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Nueva</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            title="Encoger menú"
+            aria-label="Ocultar menú"
+          >
+            <ChevronRight className="w-4 h-4 rotate-180" />
+          </button>
+        </div>
       </div>
 
       {/* Instant Search Bar */}
