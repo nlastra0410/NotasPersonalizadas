@@ -1,0 +1,6 @@
+{
+  "name": "NotaScribe Tablet - Notas, Stylus y Reconocimiento",
+  "description": "App de notas avanzada para tablets Android con escritura fluida con lápiz stylus, reconocimiento de escritura en tiempo real, organizador de carpetas, lista de tareas, mapa conceptual interactivo y transcripción por voz.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
