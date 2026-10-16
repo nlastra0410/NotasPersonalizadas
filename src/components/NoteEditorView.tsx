@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { NoteItem, PaperStyle, Stroke } from '../types';
+import { NoteItem, PaperStyle, Stroke, NoteViewLayout } from '../types';
 import { HandwritingCanvas } from './HandwritingCanvas';
+import { DictationStudio } from './DictationStudio';
 import {
   Tag as TagIcon,
   Sparkles,
@@ -13,6 +14,7 @@ import {
   Check,
   ListPlus,
   Network,
+  Mic,
 } from 'lucide-react';
 import {
   getNotePages,
@@ -40,7 +42,7 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
   onConvertToConceptMap,
 }) => {
   const [newTagInput, setNewTagInput] = useState<string>('');
-  const [viewLayout, setViewLayout] = useState<'canvas' | 'split' | 'text'>('split');
+  const [viewLayout, setViewLayout] = useState<NoteViewLayout>('canvas');
 
   const currentPageIndex = note.activePageIndex ?? 0;
   const pages = getNotePages(note);
@@ -98,20 +100,21 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
     });
   };
 
-  const showCanvas = viewLayout !== 'text';
-  const showTextPane = isRightPaneOpen && viewLayout !== 'canvas';
+  const showDictation = viewLayout === 'dictation';
+  const showCanvas = !showDictation && viewLayout !== 'text';
+  const showTextPane = !showDictation && ((isRightPaneOpen && viewLayout !== 'canvas') || viewLayout === 'text');
 
   const totalStrokes = pages.reduce((acc, p) => acc + p.length, 0);
 
   return (
     <div className="flex-1 w-full h-full flex flex-col overflow-hidden bg-slate-100 dark:bg-slate-950 relative">
-      {/* Sub-header: Quick Layout Controller (Solo Lienzo / Ver Ambos / Solo Texto) */}
+      {/* Sub-header: Quick Layout Controller (Solo Lienzo / Ver Ambos / Solo Texto / Dictado & Voz) */}
       <div className="h-9 px-4 bg-slate-50 dark:bg-slate-900/90 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-xs shrink-0 select-none">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none]">
           <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider hidden sm:inline">
-            Modo de Trabajo:
+            Modo:
           </span>
-          <div className="flex items-center bg-slate-200/70 dark:bg-slate-800 p-0.5 rounded-lg">
+          <div className="flex items-center bg-slate-200/70 dark:bg-slate-800 p-0.5 rounded-lg shrink-0">
             <button
               type="button"
               onClick={() => {
@@ -119,11 +122,11 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
                 if (isRightPaneOpen) onToggleRightPane();
               }}
               className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center gap-1 ${
-                !isRightPaneOpen || viewLayout === 'canvas'
+                viewLayout === 'canvas' && !isRightPaneOpen
                   ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
-              title="Mostrar únicamente la hoja en blanco / cuaderno"
+              title="Mostrar únicamente la hoja en blanco / cuaderno con lápiz stylus"
             >
               <PenTool className="w-3 h-3" />
               <span>Solo Lienzo</span>
@@ -136,7 +139,7 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
                 if (!isRightPaneOpen) onToggleRightPane();
               }}
               className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center gap-1 ${
-                isRightPaneOpen && viewLayout === 'split'
+                viewLayout === 'split' && isRightPaneOpen
                   ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
@@ -153,7 +156,7 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
                 if (!isRightPaneOpen) onToggleRightPane();
               }}
               className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center gap-1 ${
-                isRightPaneOpen && viewLayout === 'text'
+                viewLayout === 'text'
                   ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
@@ -161,6 +164,22 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
             >
               <FileText className="w-3 h-3" />
               <span>Solo Texto</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setViewLayout('dictation');
+              }}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center gap-1 ${
+                viewLayout === 'dictation'
+                  ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs ring-1 ring-rose-200 dark:ring-rose-900/60'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+              title="Estudio de dictado en vivo y transcripción automática de conversaciones"
+            >
+              <Mic className="w-3 h-3 text-rose-500" />
+              <span>Dictado & Voz</span>
             </button>
           </div>
         </div>
@@ -175,10 +194,24 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
         </div>
       </div>
 
-      {/* Main Workspace: Canvas and/or Text Pane */}
+      {/* Main Workspace: Canvas, Text Pane, or Dictation Studio */}
       <div className="flex-1 w-full flex flex-col md:flex-row overflow-hidden relative">
-        {/* Primary Area: Handwriting Canvas */}
-        {showCanvas && (
+        {showDictation ? (
+          <DictationStudio
+            initialText={note.content}
+            onUpdateNoteContent={(newContent) => onUpdateNote({ content: newContent, updatedAt: Date.now() })}
+            onAppendToNoteContent={(textToAppend) => {
+              const updatedContent = note.content ? `${note.content}\n\n${textToAppend}` : textToAppend;
+              onUpdateNote({ content: updatedContent, updatedAt: Date.now() });
+            }}
+            onConvertToTasks={onConvertToTasks}
+            onConvertToConceptMap={onConvertToConceptMap}
+            noteTitle={note.title}
+          />
+        ) : (
+          <>
+            {/* Primary Area: Handwriting Canvas */}
+            {showCanvas && (
           <div className="flex-1 h-full relative overflow-hidden flex flex-col min-w-0">
             <HandwritingCanvas
               strokes={currentStrokes}
@@ -306,6 +339,18 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
 
             {/* Typed Textarea */}
             <div className="flex-1 p-3 flex flex-col">
+              <div className="flex items-center justify-between mb-1.5 px-0.5">
+                <span className="text-[11px] font-semibold text-slate-500">Contenido Escrito</span>
+                <button
+                  type="button"
+                  onClick={() => setViewLayout('dictation')}
+                  className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 flex items-center gap-1 px-2 py-0.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                  title="Abrir estudio de dictado en vivo para transcribir voz"
+                >
+                  <Mic className="w-3.5 h-3.5" />
+                  <span>Dictar por Voz</span>
+                </button>
+              </div>
               <textarea
                 value={note.content}
                 onChange={(e) => onUpdateNote({ content: e.target.value, updatedAt: Date.now() })}
@@ -343,6 +388,8 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
               </div>
             </div>
           </aside>
+        )}
+          </>
         )}
       </div>
     </div>

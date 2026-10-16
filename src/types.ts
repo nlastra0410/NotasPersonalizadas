@@ -98,6 +98,7 @@ export interface ConceptGraph {
 }
 
 export type ActiveTab = 'canvas' | 'organizer' | 'tasks' | 'concept';
+export type NoteViewLayout = 'canvas' | 'split' | 'text' | 'dictation';
 
 export interface SearchResultItem {
   id: string;
