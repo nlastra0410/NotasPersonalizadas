@@ -2,6 +2,8 @@ export type PenTool = 'pen' | 'fountain' | 'highlighter' | 'brush' | 'eraser' | 
 
 export type PaperStyle = 'ruled' | 'grid' | 'dots' | 'cornell' | 'blank' | 'dark_board';
 
+export type ToolbarPosition = 'top' | 'left' | 'right' | 'floating';
+
 export interface Point {
   x: number;
   y: number;

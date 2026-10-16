@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   PenTool,
   PaperStyle,
+  ToolbarPosition,
   Stroke,
   Point,
 } from '../types';
@@ -45,6 +46,11 @@ import {
   ChevronRight,
   Plus,
   Share2,
+  PanelTop,
+  PanelLeft,
+  PanelRight,
+  Move,
+  Dock,
 } from 'lucide-react';
 import { ExportModal } from './ExportModal';
 
@@ -117,6 +123,25 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [predictiveStylus, setPredictiveStylus] = useState<boolean>(true);
   const [showPaperHelp, setShowPaperHelp] = useState<boolean>(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+  const [toolbarPosition, setToolbarPosition] = useState<ToolbarPosition>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('notascribe_toolbar_pos');
+      if (saved === 'top' || saved === 'left' || saved === 'right' || saved === 'floating') {
+        return saved as ToolbarPosition;
+      }
+    }
+    return 'top'; // Fija como menú superior por defecto (sin tapar la hoja)
+  });
+  const [showDockMenu, setShowDockMenu] = useState<boolean>(false);
+  const [showPaperMenuVertical, setShowPaperMenuVertical] = useState<boolean>(false);
+
+  const changeToolbarPosition = (pos: ToolbarPosition) => {
+    setToolbarPosition(pos);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('notascribe_toolbar_pos', pos);
+    }
+    setShowDockMenu(false);
+  };
 
   // Undo/Redo history
   const [history, setHistory] = useState<Stroke[][]>([]);
@@ -700,22 +725,437 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
   const totalPages = Math.max(1, pages.length);
 
-  return (
+  const renderDockButton = (isVertical = false, side: 'left' | 'right' = 'left') => (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setShowDockMenu(!showDockMenu)}
+        className={`p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-all ${
+          showDockMenu ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-200' : ''
+        }`}
+        title="Cambiar posición de la barra: Fija arriba, anclada izquierda, anclada derecha o flotante"
+        aria-label="Posición de la barra de herramientas"
+      >
+        {toolbarPosition === 'top' && <PanelTop className="w-4 h-4 text-blue-600 dark:text-blue-400" />}
+        {toolbarPosition === 'left' && <PanelLeft className="w-4 h-4 text-blue-600 dark:text-blue-400" />}
+        {toolbarPosition === 'right' && <PanelRight className="w-4 h-4 text-blue-600 dark:text-blue-400" />}
+        {toolbarPosition === 'floating' && <Move className="w-4 h-4 text-blue-600 dark:text-blue-400" />}
+        {!isVertical && (
+          <span className="hidden xl:inline text-xs font-semibold text-slate-700 dark:text-slate-300">
+            {toolbarPosition === 'top'
+              ? 'Fija Arriba'
+              : toolbarPosition === 'left'
+              ? 'Izquierda'
+              : toolbarPosition === 'right'
+              ? 'Derecha'
+              : 'Flotante'}
+          </span>
+        )}
+      </button>
+
+      {showDockMenu && (
+        <div
+          className={`absolute ${
+            isVertical
+              ? side === 'left'
+                ? 'left-full ml-2 top-0'
+                : 'right-full mr-2 top-0'
+              : 'right-0 top-full mt-1.5'
+          } w-56 bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 p-1.5 z-50 text-xs`}
+        >
+          <div className="px-2 py-1 font-bold text-slate-400 text-[10px] uppercase tracking-wider">
+            Posición de la barra
+          </div>
+          <button
+            type="button"
+            onClick={() => changeToolbarPosition('top')}
+            className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${
+              toolbarPosition === 'top'
+                ? 'bg-blue-50 text-blue-700 font-semibold dark:bg-blue-950/60 dark:text-blue-300'
+                : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'
+            }`}
+          >
+            <PanelTop className="w-4 h-4 text-blue-600 shrink-0" />
+            <div>
+              <div className="font-semibold">Fija Arriba (Menú Superior)</div>
+              <div className="text-[10px] text-slate-400">No flota, nunca tapa la hoja</div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => changeToolbarPosition('left')}
+            className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${
+              toolbarPosition === 'left'
+                ? 'bg-blue-50 text-blue-700 font-semibold dark:bg-blue-950/60 dark:text-blue-300'
+                : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'
+            }`}
+          >
+            <PanelLeft className="w-4 h-4 text-blue-600 shrink-0" />
+            <div>
+              <div className="font-semibold">Anclada a la Izquierda</div>
+              <div className="text-[10px] text-slate-400">Barra lateral vertical (ideal diestros)</div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => changeToolbarPosition('right')}
+            className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${
+              toolbarPosition === 'right'
+                ? 'bg-blue-50 text-blue-700 font-semibold dark:bg-blue-950/60 dark:text-blue-300'
+                : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'
+            }`}
+          >
+            <PanelRight className="w-4 h-4 text-blue-600 shrink-0" />
+            <div>
+              <div className="font-semibold">Anclada a la Derecha</div>
+              <div className="text-[10px] text-slate-400">Barra lateral vertical (ideal zurdos)</div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => changeToolbarPosition('floating')}
+            className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${
+              toolbarPosition === 'floating'
+                ? 'bg-blue-50 text-blue-700 font-semibold dark:bg-blue-950/60 dark:text-blue-300'
+                : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'
+            }`}
+          >
+            <Move className="w-4 h-4 text-blue-600 shrink-0" />
+            <div>
+              <div className="font-semibold">Flotante</div>
+              <div className="text-[10px] text-slate-400">Flota sobre la hoja de papel</div>
+            </div>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderHorizontalToolbar = () => (
     <div
-      ref={containerRef}
-      className={`relative flex flex-col w-full h-full bg-slate-100 overflow-hidden select-none ${
-        isZenMode ? 'fixed inset-0 z-50 bg-slate-900' : ''
-      }`}
-      style={{ touchAction: 'none' }}
+      className={
+        toolbarPosition === 'top'
+          ? 'w-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 py-1.5 flex items-center justify-between gap-1.5 shrink-0 z-30 shadow-xs overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+          : 'absolute top-3 left-1/2 -translate-x-1/2 z-30 max-w-[96vw] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-2.5 py-1.5 rounded-2xl shadow-xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+      }
     >
-      {/* Floating Tablet Stylus Toolbar */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 max-w-[96vw] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-2.5 py-1.5 rounded-2xl shadow-xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-        {/* Pen Tools */}
-        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
+      {/* Pen Tools */}
+      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl shrink-0">
+        <button
+          type="button"
+          onClick={() => setCurrentTool('pen')}
+          className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
+            currentTool === 'pen'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+          }`}
+          title="Bolígrafo de precisión"
+          aria-label="Bolígrafo"
+        >
+          <Pen className="w-4 h-4" />
+          <span className="hidden sm:inline">Pluma</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setCurrentTool('fountain')}
+          className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
+            currentTool === 'fountain'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+          }`}
+          title="Pluma caligráfica"
+          aria-label="Pluma estilográfica"
+        >
+          <RotateCcw className="w-4 h-4" />
+          <span className="hidden sm:inline">Caligrafía</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setCurrentTool('highlighter');
+            if (currentColor === '#0f172a') setCurrentColor('#facc15');
+          }}
+          className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
+            currentTool === 'highlighter'
+              ? 'bg-yellow-500 text-slate-900 shadow-sm'
+              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+          }`}
+          title="Marcador fluorescente"
+          aria-label="Resaltador"
+        >
+          <Highlighter className="w-4 h-4" />
+          <span className="hidden sm:inline">Resaltar</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setCurrentTool('brush')}
+          className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
+            currentTool === 'brush'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+          }`}
+          title="Pincel artístico"
+          aria-label="Pincel"
+        >
+          <Brush className="w-4 h-4" />
+          <span className="hidden sm:inline">Pincel</span>
+        </button>
+
+        {/* Laser Pointer (Presentation Mode) */}
+        <button
+          type="button"
+          onClick={() => setCurrentTool('laser')}
+          className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
+            currentTool === 'laser'
+              ? 'bg-rose-600 text-white shadow-sm ring-2 ring-rose-400/50'
+              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+          }`}
+          title="Puntero Láser de Presentación: se desvanece a los 2 segundos, no ensucia la nota"
+          aria-label="Puntero Láser"
+        >
+          <Sparkles className="w-4 h-4 text-rose-300" />
+          <span className="hidden sm:inline">Láser</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setCurrentTool('eraser')}
+          className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
+            currentTool === 'eraser'
+              ? 'bg-rose-600 text-white shadow-sm'
+              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+          }`}
+          title="Borrador de trazos"
+          aria-label="Borrador"
+        >
+          <Eraser className="w-4 h-4" />
+          <span className="hidden sm:inline">Borrar</span>
+        </button>
+      </div>
+
+      {/* Color Palette */}
+      {currentTool !== 'eraser' && currentTool !== 'laser' && (
+        <div className="flex items-center gap-1 px-1 border-l border-slate-200 dark:border-slate-800 shrink-0">
+          {COLOR_PRESETS.map((color) => (
+            <button
+              key={color}
+              type="button"
+              onClick={() => setCurrentColor(color)}
+              className={`w-6 h-6 rounded-full transition-transform ${
+                currentColor === color ? 'scale-125 ring-2 ring-blue-500 ring-offset-2' : 'hover:scale-110'
+              }`}
+              style={{ backgroundColor: color }}
+              aria-label={`Color ${color}`}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Stroke Width Selector */}
+      {currentTool !== 'laser' && (
+        <div className="flex items-center gap-1 px-1 border-l border-slate-200 dark:border-slate-800 shrink-0">
+          {STROKE_SIZES.map((sz) => (
+            <button
+              key={sz}
+              type="button"
+              onClick={() => setCurrentSize(sz)}
+              className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${
+                currentSize === sz
+                  ? 'bg-blue-100 text-blue-700 font-bold dark:bg-blue-900/60 dark:text-blue-200'
+                  : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+              title={`Grosor ${sz}px`}
+              aria-label={`Grosor ${sz}px`}
+            >
+              <span
+                className="rounded-full bg-current"
+                style={{ width: Math.min(14, sz + 2), height: Math.min(14, sz + 2) }}
+              />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Paper Style Selector */}
+      <div className="flex items-center gap-1 px-1 border-l border-slate-200 dark:border-slate-800 relative shrink-0">
+        <select
+          value={paperStyle}
+          onChange={(e) => onPaperStyleChange(e.target.value as PaperStyle)}
+          className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1.5 border border-slate-200 dark:border-slate-700 outline-none font-medium cursor-pointer"
+          title="Cambiar tipo de papel de fondo"
+          aria-label="Tipo de papel"
+        >
+          <option value="blank">Blanco Liso (Sin líneas)</option>
+          <option value="ruled">Líneas de Cuaderno</option>
+          <option value="grid">Cuadrícula</option>
+          <option value="dots">Puntos (Bullet)</option>
+          <option value="cornell">Método Cornell</option>
+          <option value="dark_board">Pizarra Oscura</option>
+        </select>
+
+        <button
+          type="button"
+          onClick={() => setShowPaperHelp(!showPaperHelp)}
+          className="p-1 text-slate-400 hover:text-slate-600 rounded-md"
+          title="¿Para qué sirven las líneas del cuaderno?"
+          aria-label="Ayuda sobre el fondo de papel"
+        >
+          <HelpCircle className="w-3.5 h-3.5" />
+        </button>
+
+        {showPaperHelp && (
+          <div className="absolute top-10 right-0 w-72 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-3 z-40 text-left text-xs">
+            <div className="font-bold text-slate-900 dark:text-slate-100 mb-1 flex items-center justify-between">
+              <span>¿Para qué sirve el fondo?</span>
+              <button
+                type="button"
+                onClick={() => setShowPaperHelp(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-[11px]">
+              <strong>Blanco Liso:</strong> Hoja limpia perfecta para dibujar, esquemas o escribir sin ninguna línea.<br />
+              <strong>Líneas:</strong> Guía para mantener la escritura uniforme con el lápiz stylus.<br />
+              <strong>Cuadrícula:</strong> Ideal para gráficos, geometría y diagramas técnicos.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Predictive Features Toggles */}
+      <div className="flex items-center gap-1 border-l border-slate-200 dark:border-slate-800 pl-1 shrink-0">
+        <button
+          type="button"
+          onClick={() => setPredictiveShapes(!predictiveShapes)}
+          className={`p-2 rounded-xl text-xs font-medium flex items-center gap-1 transition-all ${
+            predictiveShapes
+              ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
+              : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+          title={
+            predictiveShapes
+              ? 'Predicción de formas ACTIVADA (Líneas y círculos a mano se perfeccionan automáticamente)'
+              : 'Predicción de formas DESACTIVADA'
+          }
+          aria-label="Formas predictivas"
+        >
+          <Shapes className="w-4 h-4" />
+          <span className="hidden xl:inline">Formas</span>
+        </button>
+
+        {/* Palm Rejection Mode */}
+        <button
+          type="button"
+          onClick={() => setPalmRejection(!palmRejection)}
+          className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            palmRejection
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+          }`}
+          title={
+            palmRejection
+              ? 'Rechazo de Palma ACTIVADO: Solo dibuja el stylus, se ignoran toques de mano'
+              : 'Rechazo de Palma DESACTIVADO: Acepta lápiz y dedos'
+          }
+          aria-label="Rechazo de palma"
+        >
+          {palmRejection ? <ShieldCheck className="w-4 h-4 text-white" /> : <ShieldAlert className="w-4 h-4" />}
+          <span className="hidden md:inline">{palmRejection ? 'Solo Stylus' : 'Rechazo Palma'}</span>
+        </button>
+      </div>
+
+      {/* Undo / Redo */}
+      <div className="flex items-center gap-0.5 border-l border-slate-200 dark:border-slate-800 pl-1 shrink-0">
+        <button
+          type="button"
+          onClick={handleUndo}
+          disabled={historyIndex <= 0 && strokes.length === 0}
+          className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none"
+          title="Deshacer trazo"
+          aria-label="Deshacer"
+        >
+          <Undo2 className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          onClick={handleRedo}
+          disabled={historyIndex >= history.length - 1}
+          className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none"
+          title="Rehacer trazo"
+          aria-label="Rehacer"
+        >
+          <Redo2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Clear Canvas */}
+      <button
+        type="button"
+        onClick={handleClear}
+        disabled={strokes.length === 0}
+        className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 disabled:opacity-30 shrink-0"
+        title="Borrar todo el lienzo"
+        aria-label="Borrar lienzo"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
+
+      {/* Export Modal / Zen Fullscreen / Dock Selector */}
+      <div className="flex items-center gap-0.5 border-l border-slate-200 dark:border-slate-800 pl-1 shrink-0">
+        <button
+          type="button"
+          onClick={() => setIsExportModalOpen(true)}
+          className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1"
+          title="Exportar imagen PNG o imprimir PDF"
+          aria-label="Exportar"
+        >
+          <Share2 className="w-4 h-4" />
+          <span className="hidden xl:inline text-xs font-semibold">Exportar</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setIsZenMode(!isZenMode)}
+          className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+          title={isZenMode ? 'Salir de pantalla completa' : 'Modo Zen / Pantalla completa'}
+          aria-label="Pantalla completa"
+        >
+          {isZenMode ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+        </button>
+
+        {/* Dock position toggle button */}
+        {renderDockButton(false)}
+      </div>
+    </div>
+  );
+
+  const renderVerticalToolbar = (side: 'left' | 'right') => (
+    <div
+      className={`w-14 sm:w-16 h-full bg-white dark:bg-slate-900 ${
+        side === 'left' ? 'border-r' : 'border-l'
+      } border-slate-200 dark:border-slate-800 py-2.5 px-1 flex flex-col items-center justify-between gap-2 shrink-0 z-30 shadow-xs overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden`}
+    >
+      {/* Top section: Dock changer + Pen tools */}
+      <div className="flex flex-col items-center gap-1 w-full">
+        {/* Dock changer */}
+        {renderDockButton(true, side)}
+
+        <div className="w-8 h-px bg-slate-200 dark:bg-slate-800 my-1" />
+
+        {/* Pen Tools in vertical column */}
+        <div className="flex flex-col items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl w-full">
           <button
             type="button"
             onClick={() => setCurrentTool('pen')}
-            className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
+            className={`p-2 rounded-lg transition-all w-full flex justify-center ${
               currentTool === 'pen'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -724,13 +1164,12 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             aria-label="Bolígrafo"
           >
             <Pen className="w-4 h-4" />
-            <span className="hidden sm:inline">Pluma</span>
           </button>
 
           <button
             type="button"
             onClick={() => setCurrentTool('fountain')}
-            className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
+            className={`p-2 rounded-lg transition-all w-full flex justify-center ${
               currentTool === 'fountain'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -739,7 +1178,6 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             aria-label="Pluma estilográfica"
           >
             <RotateCcw className="w-4 h-4" />
-            <span className="hidden sm:inline">Caligrafía</span>
           </button>
 
           <button
@@ -748,7 +1186,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
               setCurrentTool('highlighter');
               if (currentColor === '#0f172a') setCurrentColor('#facc15');
             }}
-            className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
+            className={`p-2 rounded-lg transition-all w-full flex justify-center ${
               currentTool === 'highlighter'
                 ? 'bg-yellow-500 text-slate-900 shadow-sm'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -757,13 +1195,12 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             aria-label="Resaltador"
           >
             <Highlighter className="w-4 h-4" />
-            <span className="hidden sm:inline">Resaltar</span>
           </button>
 
           <button
             type="button"
             onClick={() => setCurrentTool('brush')}
-            className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
+            className={`p-2 rounded-lg transition-all w-full flex justify-center ${
               currentTool === 'brush'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -772,29 +1209,26 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             aria-label="Pincel"
           >
             <Brush className="w-4 h-4" />
-            <span className="hidden sm:inline">Pincel</span>
           </button>
 
-          {/* Laser Pointer (Presentation Mode) */}
           <button
             type="button"
             onClick={() => setCurrentTool('laser')}
-            className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
+            className={`p-2 rounded-lg transition-all w-full flex justify-center ${
               currentTool === 'laser'
                 ? 'bg-rose-600 text-white shadow-sm ring-2 ring-rose-400/50'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
-            title="Puntero Láser de Presentación: se desvanece a los 2 segundos, no ensucia la nota"
+            title="Puntero Láser (se desvanece a los 2s)"
             aria-label="Puntero Láser"
           >
             <Sparkles className="w-4 h-4 text-rose-300" />
-            <span className="hidden sm:inline">Láser</span>
           </button>
 
           <button
             type="button"
             onClick={() => setCurrentTool('eraser')}
-            className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
+            className={`p-2 rounded-lg transition-all w-full flex justify-center ${
               currentTool === 'eraser'
                 ? 'bg-rose-600 text-white shadow-sm'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -803,20 +1237,19 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             aria-label="Borrador"
           >
             <Eraser className="w-4 h-4" />
-            <span className="hidden sm:inline">Borrar</span>
           </button>
         </div>
 
-        {/* Color Palette */}
+        {/* Color Palette (2 cols) */}
         {currentTool !== 'eraser' && currentTool !== 'laser' && (
-          <div className="flex items-center gap-1 px-1 border-l border-slate-200 dark:border-slate-800">
+          <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl my-1">
             {COLOR_PRESETS.map((color) => (
               <button
                 key={color}
                 type="button"
                 onClick={() => setCurrentColor(color)}
-                className={`w-6 h-6 rounded-full transition-transform ${
-                  currentColor === color ? 'scale-125 ring-2 ring-blue-500 ring-offset-2' : 'hover:scale-110'
+                className={`w-4 h-4 rounded-full transition-transform ${
+                  currentColor === color ? 'scale-125 ring-2 ring-blue-500 ring-offset-1' : 'hover:scale-110'
                 }`}
                 style={{ backgroundColor: color }}
                 aria-label={`Color ${color}`}
@@ -825,9 +1258,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           </div>
         )}
 
-        {/* Stroke Width Selector */}
+        {/* Stroke Sizes */}
         {currentTool !== 'laser' && (
-          <div className="flex items-center gap-1 px-1 border-l border-slate-200 dark:border-slate-800">
+          <div className="flex flex-col items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-full">
             {STROKE_SIZES.map((sz) => (
               <button
                 key={sz}
@@ -836,192 +1269,241 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${
                   currentSize === sz
                     ? 'bg-blue-100 text-blue-700 font-bold dark:bg-blue-900/60 dark:text-blue-200'
-                    : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'
                 }`}
                 title={`Grosor ${sz}px`}
                 aria-label={`Grosor ${sz}px`}
               >
                 <span
                   className="rounded-full bg-current"
-                  style={{ width: Math.min(14, sz + 2), height: Math.min(14, sz + 2) }}
+                  style={{ width: Math.min(12, sz + 2), height: Math.min(12, sz + 2) }}
                 />
               </button>
             ))}
           </div>
         )}
 
-        {/* Paper Style Selector */}
-        <div className="flex items-center gap-1 px-1 border-l border-slate-200 dark:border-slate-800 relative">
-          <select
-            value={paperStyle}
-            onChange={(e) => onPaperStyleChange(e.target.value as PaperStyle)}
-            className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1.5 border border-slate-200 dark:border-slate-700 outline-none font-medium cursor-pointer"
-            title="Cambiar tipo de papel de fondo"
-            aria-label="Tipo de papel"
-          >
-            <option value="blank">Blanco Liso (Sin líneas)</option>
-            <option value="ruled">Líneas de Cuaderno</option>
-            <option value="grid">Cuadrícula</option>
-            <option value="dots">Puntos (Bullet)</option>
-            <option value="cornell">Método Cornell</option>
-            <option value="dark_board">Pizarra Oscura</option>
-          </select>
-
+        {/* Paper Style Popover Button */}
+        <div className="relative my-1">
           <button
             type="button"
-            onClick={() => setShowPaperHelp(!showPaperHelp)}
-            className="p-1 text-slate-400 hover:text-slate-600 rounded-md"
-            title="¿Para qué sirven las líneas del cuaderno?"
-            aria-label="Ayuda sobre el fondo de papel"
+            onClick={() => setShowPaperMenuVertical(!showPaperMenuVertical)}
+            className={`p-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 ${
+              showPaperMenuVertical ? 'bg-blue-100 text-blue-700' : ''
+            }`}
+            title="Cambiar tipo de papel (Blanco, Cuaderno, Cuadrícula...)"
+            aria-label="Tipo de papel"
           >
-            <HelpCircle className="w-3.5 h-3.5" />
+            <FileText className="w-4 h-4" />
           </button>
 
-          {showPaperHelp && (
-            <div className="absolute top-10 right-0 w-72 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-3 z-40 text-left text-xs">
-              <div className="font-bold text-slate-900 dark:text-slate-100 mb-1 flex items-center justify-between">
-                <span>¿Para qué sirve el fondo?</span>
-                <button
-                  type="button"
-                  onClick={() => setShowPaperHelp(false)}
-                  className="text-slate-400 hover:text-slate-600 text-sm font-bold"
-                >
-                  ×
-                </button>
+          {showPaperMenuVertical && (
+            <div
+              className={`absolute ${
+                side === 'left' ? 'left-full ml-2' : 'right-full mr-2'
+              } top-0 w-52 bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 p-1.5 z-50 text-xs`}
+            >
+              <div className="px-2 py-1 font-bold text-slate-400 text-[10px] uppercase">
+                Fondo de Papel
               </div>
-              <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-[11px]">
-                <strong>Blanco Liso:</strong> Hoja limpia perfecta para dibujar, esquemas o escribir sin ninguna línea.<br />
-                <strong>Líneas:</strong> Guía para mantener la escritura uniforme con el lápiz stylus.<br />
-                <strong>Cuadrícula:</strong> Ideal para gráficos, geometría y diagramas técnicos.
-              </p>
+              {[
+                { id: 'blank', label: 'Blanco Liso (Sin líneas)' },
+                { id: 'ruled', label: 'Líneas de Cuaderno' },
+                { id: 'grid', label: 'Cuadrícula' },
+                { id: 'dots', label: 'Puntos (Bullet)' },
+                { id: 'cornell', label: 'Método Cornell' },
+                { id: 'dark_board', label: 'Pizarra Oscura' },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    onPaperStyleChange(opt.id as PaperStyle);
+                    setShowPaperMenuVertical(false);
+                  }}
+                  className={`w-full text-left px-2 py-1.5 rounded-lg transition-colors ${
+                    paperStyle === opt.id
+                      ? 'bg-blue-50 text-blue-700 font-semibold dark:bg-blue-950/60 dark:text-blue-300'
+                      : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
           )}
         </div>
 
-        {/* Predictive Features Toggles */}
-        <div className="flex items-center gap-1 border-l border-slate-200 dark:border-slate-800 pl-1">
-          <button
-            type="button"
-            onClick={() => setPredictiveShapes(!predictiveShapes)}
-            className={`p-2 rounded-xl text-xs font-medium flex items-center gap-1 transition-all ${
-              predictiveShapes
-                ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
-                : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-            title={
-              predictiveShapes
-                ? 'Predicción de formas ACTIVADA (Líneas y círculos a mano se perfeccionan automáticamente)'
-                : 'Predicción de formas DESACTIVADA'
-            }
-            aria-label="Formas predictivas"
-          >
-            <Shapes className="w-4 h-4" />
-            <span className="hidden xl:inline">Formas</span>
-          </button>
+        {/* Predictive Shapes */}
+        <button
+          type="button"
+          onClick={() => setPredictiveShapes(!predictiveShapes)}
+          className={`p-2 rounded-xl text-xs font-medium flex items-center justify-center transition-all ${
+            predictiveShapes
+              ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
+              : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+          title={
+            predictiveShapes
+              ? 'Formas automáticas activadas'
+              : 'Formas automáticas desactivadas'
+          }
+          aria-label="Formas predictivas"
+        >
+          <Shapes className="w-4 h-4" />
+        </button>
 
-          {/* Palm Rejection Mode */}
-          <button
-            type="button"
-            onClick={() => setPalmRejection(!palmRejection)}
-            className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
-              palmRejection
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
-            }`}
-            title={
-              palmRejection
-                ? 'Rechazo de Palma ACTIVADO: Solo dibuja el stylus, se ignoran toques de mano'
-                : 'Rechazo de Palma DESACTIVADO: Acepta lápiz y dedos'
-            }
-            aria-label="Rechazo de palma"
-          >
-            {palmRejection ? <ShieldCheck className="w-4 h-4 text-white" /> : <ShieldAlert className="w-4 h-4" />}
-            <span className="hidden md:inline">{palmRejection ? 'Solo Stylus' : 'Rechazo Palma'}</span>
-          </button>
-        </div>
+        {/* Palm Rejection Mode */}
+        <button
+          type="button"
+          onClick={() => setPalmRejection(!palmRejection)}
+          className={`p-2 rounded-xl text-xs font-semibold flex items-center justify-center transition-all ${
+            palmRejection
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+          }`}
+          title={
+            palmRejection
+              ? 'Solo Stylus: toques con la mano ignorados'
+              : 'Rechazo de Palma desactivado'
+          }
+          aria-label="Rechazo de palma"
+        >
+          {palmRejection ? <ShieldCheck className="w-4 h-4 text-white" /> : <ShieldAlert className="w-4 h-4" />}
+        </button>
+      </div>
 
-        {/* Undo / Redo */}
-        <div className="flex items-center gap-0.5 border-l border-slate-200 dark:border-slate-800 pl-1">
+      {/* Bottom section: Undo/Redo, Trash, Export, Zen */}
+      <div className="flex flex-col items-center gap-1 w-full pt-1 border-t border-slate-200 dark:border-slate-800">
+        <div className="flex items-center gap-0.5">
           <button
             type="button"
             onClick={handleUndo}
             disabled={historyIndex <= 0 && strokes.length === 0}
             className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none"
-            title="Deshacer trazo"
+            title="Deshacer"
             aria-label="Deshacer"
           >
-            <Undo2 className="w-4 h-4" />
+            <Undo2 className="w-3.5 h-3.5" />
           </button>
           <button
             type="button"
             onClick={handleRedo}
             disabled={historyIndex >= history.length - 1}
             className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none"
-            title="Rehacer trazo"
+            title="Rehacer"
             aria-label="Rehacer"
           >
-            <Redo2 className="w-4 h-4" />
+            <Redo2 className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* Clear Canvas */}
         <button
           type="button"
           onClick={handleClear}
           disabled={strokes.length === 0}
-          className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 disabled:opacity-30"
-          title="Borrar todo el lienzo"
+          className="p-2 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 disabled:opacity-30"
+          title="Borrar lienzo"
           aria-label="Borrar lienzo"
         >
           <Trash2 className="w-4 h-4" />
         </button>
 
-        {/* Export Modal / Zen Fullscreen */}
-        <div className="flex items-center gap-0.5 border-l border-slate-200 dark:border-slate-800 pl-1">
-          <button
-            type="button"
-            onClick={() => setIsExportModalOpen(true)}
-            className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1"
-            title="Exportar imagen PNG o imprimir PDF"
-            aria-label="Exportar"
-          >
-            <Share2 className="w-4 h-4" />
-            <span className="hidden xl:inline text-xs font-semibold">Exportar</span>
-          </button>
+        <button
+          type="button"
+          onClick={() => setIsExportModalOpen(true)}
+          className="p-2 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+          title="Exportar imagen PNG o imprimir PDF"
+          aria-label="Exportar"
+        >
+          <Share2 className="w-4 h-4" />
+        </button>
 
-          <button
-            type="button"
-            onClick={() => setIsZenMode(!isZenMode)}
-            className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-            title={isZenMode ? 'Salir de pantalla completa' : 'Modo Zen / Pantalla completa'}
-            aria-label="Pantalla completa"
-          >
-            {isZenMode ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setIsZenMode(!isZenMode)}
+          className="p-2 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+          title={isZenMode ? 'Salir de pantalla completa' : 'Pantalla completa'}
+          aria-label="Pantalla completa"
+        >
+          {isZenMode ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+        </button>
       </div>
+    </div>
+  );
 
-      {/* Predictive Spanish Words Chips Bar */}
-      <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm rounded-full border border-slate-200/60 dark:border-slate-800/60 shadow-xs max-w-[92vw] overflow-x-auto">
-        <span className="text-[10px] font-semibold text-slate-400 shrink-0 flex items-center gap-1">
-          <Sparkles className="w-3 h-3 text-purple-500" />
-          Sugerencias:
-        </span>
-        {predictiveWords.map((word) => (
-          <button
-            key={word}
-            type="button"
-            onClick={() => handleInsertWord(word)}
-            className="px-2.5 py-0.5 bg-slate-100 dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-600 rounded-full text-[11px] font-medium text-slate-700 dark:text-slate-300 transition-colors shrink-0"
-            title={`Insertar "${word}"`}
-          >
-            {word}
-          </button>
-        ))}
-      </div>
+  return (
+    <div
+      ref={containerRef}
+      className={`relative flex ${
+        toolbarPosition === 'left' || toolbarPosition === 'right' ? 'flex-row' : 'flex-col'
+      } w-full h-full bg-slate-100 overflow-hidden select-none ${
+        isZenMode ? 'fixed inset-0 z-50 bg-slate-900' : ''
+      }`}
+      style={{ touchAction: 'none' }}
+    >
+      {/* Backdrop for closing popups */}
+      {(showDockMenu || showPaperMenuVertical) && (
+        <div
+          className="fixed inset-0 z-40 bg-transparent"
+          onClick={() => {
+            setShowDockMenu(false);
+            setShowPaperMenuVertical(false);
+          }}
+        />
+      )}
 
-      {/* Canvas Drawing Area */}
-      <div className="flex-1 w-full h-full overflow-auto relative">
+      {/* Render toolbar according to selected position */}
+      {toolbarPosition === 'left' && renderVerticalToolbar('left')}
+      {toolbarPosition === 'top' && renderHorizontalToolbar()}
+      {toolbarPosition === 'floating' && renderHorizontalToolbar()}
+
+      {/* Main Canvas + Content Container */}
+      <div className="flex-1 w-full h-full flex flex-col overflow-hidden relative">
+        {/* Suggestions Bar in Top or Vertical mode (Placed neatly above canvas, not covering paper) */}
+        {toolbarPosition !== 'floating' && predictiveWords.length > 0 && (
+          <div className="w-full bg-slate-50/95 dark:bg-slate-900/90 border-b border-slate-200/60 dark:border-slate-800/60 px-3 py-1 flex items-center gap-1.5 shrink-0 z-20 overflow-x-auto [scrollbar-width:none]">
+            <span className="text-[10px] font-semibold text-slate-400 shrink-0 flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-purple-500" />
+              Sugerencias:
+            </span>
+            {predictiveWords.map((word) => (
+              <button
+                key={word}
+                type="button"
+                onClick={() => handleInsertWord(word)}
+                className="px-2.5 py-0.5 bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-600 rounded-full text-[11px] font-medium text-slate-700 dark:text-slate-300 border border-slate-200/70 dark:border-slate-700/70 transition-colors shrink-0"
+                title={`Insertar "${word}"`}
+              >
+                {word}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Floating suggestions bar if toolbar is floating */}
+        {toolbarPosition === 'floating' && predictiveWords.length > 0 && (
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm rounded-full border border-slate-200/60 dark:border-slate-800/60 shadow-xs max-w-[92vw] overflow-x-auto">
+            <span className="text-[10px] font-semibold text-slate-400 shrink-0 flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-purple-500" />
+              Sugerencias:
+            </span>
+            {predictiveWords.map((word) => (
+              <button
+                key={word}
+                type="button"
+                onClick={() => handleInsertWord(word)}
+                className="px-2.5 py-0.5 bg-slate-100 dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-600 rounded-full text-[11px] font-medium text-slate-700 dark:text-slate-300 transition-colors shrink-0"
+                title={`Insertar "${word}"`}
+              >
+                {word}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Canvas Drawing Area */}
+        <div className="flex-1 w-full h-full overflow-auto relative">
         <canvas
           ref={canvasRef}
           width={dimensions.width * dpr}
@@ -1194,6 +1676,10 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           </div>
         )}
       </div>
+      </div>
+
+      {/* Right-docked vertical toolbar if selected */}
+      {toolbarPosition === 'right' && renderVerticalToolbar('right')}
 
       {/* Export Modal */}
       <ExportModal
