@@ -40,7 +40,13 @@ import {
   ChevronUp,
   FileText,
   HelpCircle,
+  Zap,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Share2,
 } from 'lucide-react';
+import { ExportModal } from './ExportModal';
 
 interface HandwritingCanvasProps {
   strokes: Stroke[];
@@ -50,6 +56,14 @@ interface HandwritingCanvasProps {
   onInsertTextIntoNote: (text: string) => void;
   onConvertToTasks?: (tasksText: string) => void;
   onConvertToConceptMap?: (conceptText: string) => void;
+  // Multipage props
+  pages?: Stroke[][];
+  currentPageIndex?: number;
+  onPageChange?: (index: number) => void;
+  onAddPage?: () => void;
+  onDeletePage?: (index: number) => void;
+  noteTitle?: string;
+  noteContent?: string;
 }
 
 const COLOR_PRESETS = [
@@ -73,6 +87,13 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   onInsertTextIntoNote,
   onConvertToTasks,
   onConvertToConceptMap,
+  pages = [],
+  currentPageIndex = 0,
+  onPageChange,
+  onAddPage,
+  onDeletePage,
+  noteTitle = 'Nota Manuscrita',
+  noteContent = '',
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -84,6 +105,10 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [activeStroke, setActiveStroke] = useState<Stroke | null>(null);
 
+  // Laser Pointer state (fading neon trail for presentations)
+  const laserPointsRef = useRef<Array<{ x: number; y: number; time: number }>>([]);
+  const laserAnimRef = useRef<number | null>(null);
+
   // Tablet-specific modes & predictive features
   const [palmRejection, setPalmRejection] = useState<boolean>(false);
   const [showPalmShield, setShowPalmShield] = useState<boolean>(false);
@@ -91,6 +116,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [predictiveShapes, setPredictiveShapes] = useState<boolean>(true);
   const [predictiveStylus, setPredictiveStylus] = useState<boolean>(true);
   const [showPaperHelp, setShowPaperHelp] = useState<boolean>(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
 
   // Undo/Redo history
   const [history, setHistory] = useState<Stroke[][]>([]);
@@ -124,11 +150,9 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
   // Synchronize history when external strokes change
   useEffect(() => {
-    if (history.length === 0 && strokes.length > 0) {
-      setHistory([strokes]);
-      setHistoryIndex(0);
-    }
-  }, [strokes, history.length]);
+    setHistory([strokes]);
+    setHistoryIndex(0);
+  }, [currentPageIndex]);
 
   // Draw paper background
   const drawBackground = useCallback(
@@ -138,117 +162,94 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       if (paperStyle === 'dark_board') {
         ctx.fillStyle = '#0f172a';
         ctx.fillRect(0, 0, width, height);
-
-        // Subtle dark grid
-        ctx.strokeStyle = '#1e293b';
-        ctx.lineWidth = 1;
-        const step = 28;
-        ctx.beginPath();
-        for (let x = 0; x < width; x += step) {
-          ctx.moveTo(x, 0);
-          ctx.lineTo(x, height);
-        }
-        for (let y = 0; y < height; y += step) {
-          ctx.moveTo(0, y);
-          ctx.lineTo(width, y);
-        }
-        ctx.stroke();
-        ctx.restore();
-        return;
+      } else {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
       }
 
-      // Warm paper background for light styles
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, width, height);
-
       if (paperStyle === 'blank') {
-        // Completely clean white canvas with subtle page border
         ctx.restore();
         return;
       }
 
       if (paperStyle === 'ruled') {
-        // Horizontal ruled lines (cuaderno clásico para guiar la escritura recta)
         ctx.strokeStyle = '#e2e8f0';
         ctx.lineWidth = 1;
-        const lineSpacing = 32;
-        const topMargin = 80;
+        const lineHeight = 32;
+        const startY = 80;
 
-        ctx.beginPath();
-        for (let y = topMargin; y < height; y += lineSpacing) {
-          ctx.moveTo(0, y);
-          ctx.lineTo(width, y);
+        for (let y = startY; y < height; y += lineHeight) {
+          ctx.beginPath();
+          ctx.moveTo(40, y);
+          ctx.lineTo(width - 40, y);
+          ctx.stroke();
         }
-        ctx.stroke();
 
-        // Left margin guide line (red/pink line like classic notebook)
-        ctx.strokeStyle = '#fecdd3';
+        ctx.strokeStyle = '#fecaca';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(80, 0);
         ctx.lineTo(80, height);
         ctx.stroke();
       } else if (paperStyle === 'grid') {
-        // Grid lines for diagrams and math
         ctx.strokeStyle = '#f1f5f9';
         ctx.lineWidth = 1;
-        const step = 24;
+        const gridSize = 24;
 
-        ctx.beginPath();
-        for (let x = 0; x < width; x += step) {
+        for (let x = 0; x < width; x += gridSize) {
+          ctx.beginPath();
           ctx.moveTo(x, 0);
           ctx.lineTo(x, height);
+          ctx.stroke();
         }
-        for (let y = 0; y < height; y += step) {
+        for (let y = 0; y < height; y += gridSize) {
+          ctx.beginPath();
           ctx.moveTo(0, y);
           ctx.lineTo(width, y);
+          ctx.stroke();
         }
-        ctx.stroke();
       } else if (paperStyle === 'dots') {
-        // Dot grid (bullet journal)
         ctx.fillStyle = '#cbd5e1';
-        const step = 26;
-        for (let x = step; x < width; x += step) {
-          for (let y = step; y < height; y += step) {
+        const dotSpacing = 24;
+
+        for (let x = 24; x < width; x += dotSpacing) {
+          for (let y = 24; y < height; y += dotSpacing) {
             ctx.beginPath();
             ctx.arc(x, y, 1.2, 0, Math.PI * 2);
             ctx.fill();
           }
         }
       } else if (paperStyle === 'cornell') {
-        // Cornell notes layout
-        ctx.strokeStyle = '#cbd5e1';
-        ctx.lineWidth = 1.5;
-
-        // Top header divider
-        ctx.beginPath();
-        ctx.moveTo(0, 80);
-        ctx.lineTo(width, 80);
-        ctx.stroke();
-
-        // Cues vertical divider
         const cueDividerX = Math.round(width * 0.28);
+        const summaryDividerY = height - 160;
+
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 1;
+        const lineHeight = 28;
+        for (let y = 90; y < summaryDividerY; y += lineHeight) {
+          ctx.beginPath();
+          ctx.moveTo(cueDividerX + 16, y);
+          ctx.lineTo(width - 40, y);
+          ctx.stroke();
+        }
+
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(cueDividerX, 80);
-        ctx.lineTo(cueDividerX, height - 160);
+        ctx.lineTo(cueDividerX, summaryDividerY);
         ctx.stroke();
 
-        // Summary horizontal divider
         ctx.beginPath();
-        ctx.moveTo(0, height - 160);
-        ctx.lineTo(width, height - 160);
+        ctx.moveTo(20, summaryDividerY);
+        ctx.lineTo(width - 20, summaryDividerY);
         ctx.stroke();
 
-        // Ruled lines in notes column
-        ctx.strokeStyle = '#f1f5f9';
-        ctx.lineWidth = 1;
-        for (let y = 110; y < height - 160; y += 30) {
-          ctx.moveTo(cueDividerX, y);
-          ctx.lineTo(width, y);
-        }
+        ctx.beginPath();
+        ctx.moveTo(20, 80);
+        ctx.lineTo(width - 20, 80);
         ctx.stroke();
 
-        // Labels
         ctx.fillStyle = '#94a3b8';
         ctx.font = '11px sans-serif';
         ctx.fillText('IDEAS CLAVE / PREGUNTAS', 20, 100);
@@ -261,7 +262,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     [paperStyle]
   );
 
-  // Render a single stroke with smooth bezier interpolation
+  // Render a single stroke
   const renderStroke = useCallback(
     (ctx: CanvasRenderingContext2D, stroke: Stroke) => {
       const points = stroke.points;
@@ -323,7 +324,6 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         return;
       }
 
-      // Smooth curve drawing through midpoints
       for (let i = 0; i < points.length - 1; i++) {
         const p1 = points[i];
         const p2 = points[i + 1];
@@ -350,7 +350,6 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         ctx.stroke();
       }
 
-      // Connect last midpoint to terminal point
       if (points.length > 2) {
         const lastIdx = points.length - 1;
         const prevMid = getMidPoint(points[lastIdx - 1], points[lastIdx]);
@@ -365,7 +364,63 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     [paperStyle]
   );
 
-  // Full redraw of background + all strokes
+  // Render fading laser pointer trail
+  const renderLaserTrail = useCallback(
+    (ctx: CanvasRenderingContext2D) => {
+      const pts = laserPointsRef.current;
+      if (pts.length < 2) return;
+
+      const now = Date.now();
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        const age = now - p2.time;
+        if (age > 1200) continue;
+
+        const opacity = Math.max(0, 1 - age / 1200);
+
+        // Outer neon glow
+        ctx.shadowBlur = 14;
+        ctx.shadowColor = '#ef4444';
+        ctx.strokeStyle = `rgba(239, 68, 68, ${opacity * 0.8})`;
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+
+        // Inner white/bright core
+        ctx.shadowBlur = 4;
+        ctx.shadowColor = '#ffffff';
+        ctx.strokeStyle = `rgba(255, 255, 255, ${opacity})`;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+      }
+
+      // Draw glowing head dot
+      const last = pts[pts.length - 1];
+      if (last && now - last.time < 500) {
+        ctx.shadowBlur = 18;
+        ctx.shadowColor = '#ef4444';
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(last.x, last.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    },
+    []
+  );
+
+  // Full redraw of background + all strokes + active stroke + laser trail
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -381,19 +436,43 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       renderStroke(ctx, stroke);
     }
 
-    if (activeStroke) {
+    if (activeStroke && activeStroke.tool !== 'laser') {
       renderStroke(ctx, activeStroke);
     }
-  }, [dimensions, drawBackground, strokes, activeStroke, renderStroke]);
 
-  // Redraw when dimensions, paper style, or strokes change
+    if (laserPointsRef.current.length > 0) {
+      renderLaserTrail(ctx);
+    }
+  }, [dimensions, drawBackground, strokes, activeStroke, renderStroke, renderLaserTrail]);
+
   useEffect(() => {
     redraw();
   }, [redraw]);
 
-  // Pointer event handlers for ultra-fluid drawing with predictive math
+  // Laser animation loop that fades out points
+  const scheduleLaserFade = useCallback(() => {
+    if (laserAnimRef.current) cancelAnimationFrame(laserAnimRef.current);
+
+    const step = () => {
+      const now = Date.now();
+      laserPointsRef.current = laserPointsRef.current.filter((p) => now - p.time < 1200);
+
+      redraw();
+
+      if (laserPointsRef.current.length > 0) {
+        laserAnimRef.current = requestAnimationFrame(step);
+      } else {
+        laserAnimRef.current = null;
+      }
+    };
+
+    laserAnimRef.current = requestAnimationFrame(step);
+  }, [redraw]);
+
+  // Pointer event handlers with Palm Rejection and Stylus prediction
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (palmRejection && e.pointerType === 'touch') {
+    // Palm Rejection: If active, strictly reject non-pen pointers (e.g. hand or finger touch)
+    if (palmRejection && e.pointerType !== 'pen') {
       return;
     }
 
@@ -406,6 +485,13 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     const pressure = e.pressure > 0 ? e.pressure : 0.5;
+
+    if (currentTool === 'laser') {
+      laserPointsRef.current.push({ x, y, time: Date.now() });
+      setIsDrawing(true);
+      scheduleLaserFade();
+      return;
+    }
 
     const newStroke: Stroke = {
       id: `stroke-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -426,8 +512,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || !activeStroke) return;
-    if (palmRejection && e.pointerType === 'touch') return;
+    if (!isDrawing) return;
+    if (palmRejection && e.pointerType !== 'pen') return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -437,45 +523,47 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     const y = e.clientY - rect.top;
     const pressure = e.pressure > 0 ? e.pressure : 0.5;
 
+    if (currentTool === 'laser') {
+      laserPointsRef.current.push({ x, y, time: Date.now() });
+      scheduleLaserFade();
+      return;
+    }
+
+    if (!activeStroke) return;
+
     const newPoint: Point = { x, y, pressure, time: Date.now() };
 
     setActiveStroke((prev) => {
       if (!prev) return null;
       const pts = [...prev.points, newPoint];
 
-      // Predictive stylus path continuation
       if (predictiveStylus && pts.length >= 3) {
         const predicted = predictNextPoint(pts, 4);
         if (predicted) {
-          // Keep trajectory responsive
+          return { ...prev, points: pts };
         }
       }
 
-      return {
-        ...prev,
-        points: pts,
-      };
+      return { ...prev, points: pts };
     });
   };
 
-  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || !activeStroke) return;
-
-    const canvas = canvasRef.current;
-    if (canvas && canvas.hasPointerCapture(e.pointerId)) {
-      canvas.releasePointerCapture(e.pointerId);
-    }
-
+  const handlePointerUp = () => {
+    if (!isDrawing) return;
     setIsDrawing(false);
 
-    if (activeStroke.points.length > 0) {
+    if (currentTool === 'laser') {
+      scheduleLaserFade();
+      return;
+    }
+
+    if (activeStroke && activeStroke.points.length > 0) {
       let finalStroke = activeStroke;
 
-      // Predictive shape recognition: snap circle, rectangle, or straight line
-      if (predictiveShapes && activeStroke.tool !== 'eraser' && activeStroke.points.length > 8) {
-        const shapeDetection = detectGeometricShape(activeStroke.points);
-        if (shapeDetection.type && shapeDetection.confidence > 0.75) {
-          const cleanPoints = generateCleanShapePoints(activeStroke.points, shapeDetection.type);
+      if (predictiveShapes && activeStroke.tool !== 'eraser') {
+        const detected = detectGeometricShape(activeStroke.points);
+        if (detected && detected.type) {
+          const cleanPoints = generateCleanShapePoints(activeStroke.points, detected.type);
           finalStroke = {
             ...activeStroke,
             points: cleanPoints,
@@ -483,20 +571,17 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         }
       }
 
-      const updatedStrokes = [...strokes, finalStroke];
-      onStrokesChange(updatedStrokes);
+      const newStrokes = [...strokes, finalStroke];
+      onStrokesChange(newStrokes);
 
-      // Push to history
       const newHistory = history.slice(0, historyIndex + 1);
-      newHistory.push(updatedStrokes);
+      newHistory.push(newStrokes);
       setHistory(newHistory);
       setHistoryIndex(newHistory.length - 1);
 
-      // Auto recognize trigger after user pauses writing
       if (autoRecognize) {
-        if (autoRecognizeTimerRef.current) clearTimeout(autoRecognizeTimerRef.current);
         autoRecognizeTimerRef.current = setTimeout(() => {
-          triggerHandwritingRecognition(updatedStrokes);
+          triggerHandwritingRecognition(newStrokes);
         }, 1800);
       }
     }
@@ -597,16 +682,6 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     }
   };
 
-  // Export canvas as image
-  const handleExportPNG = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const link = document.createElement('a');
-    link.download = `nota-manuscrita-${new Date().toISOString().slice(0, 10)}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-  };
-
   const copyToClipboard = () => {
     if (!recognizedText) return;
     navigator.clipboard.writeText(recognizedText);
@@ -614,7 +689,6 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Predictive word chips based on current recognized text
   const predictiveWords = getSpanishWordPredictions(recognizedText);
 
   const handleInsertWord = (word: string) => {
@@ -624,6 +698,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   };
 
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+  const totalPages = Math.max(1, pages.length);
 
   return (
     <div
@@ -633,7 +708,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       }`}
       style={{ touchAction: 'none' }}
     >
-      {/* Floating Tablet Stylus Toolbar - Clean and Ergonomic */}
+      {/* Floating Tablet Stylus Toolbar */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 max-w-[96vw] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-2.5 py-1.5 rounded-2xl shadow-xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {/* Pen Tools */}
         <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
@@ -700,6 +775,22 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             <span className="hidden sm:inline">Pincel</span>
           </button>
 
+          {/* Laser Pointer (Presentation Mode) */}
+          <button
+            type="button"
+            onClick={() => setCurrentTool('laser')}
+            className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium ${
+              currentTool === 'laser'
+                ? 'bg-rose-600 text-white shadow-sm ring-2 ring-rose-400/50'
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+            title="Puntero Láser de Presentación: se desvanece a los 2 segundos, no ensucia la nota"
+            aria-label="Puntero Láser"
+          >
+            <Sparkles className="w-4 h-4 text-rose-300" />
+            <span className="hidden sm:inline">Láser</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setCurrentTool('eraser')}
@@ -716,8 +807,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           </button>
         </div>
 
-        {/* Color Palette (hidden when eraser active) */}
-        {currentTool !== 'eraser' && (
+        {/* Color Palette */}
+        {currentTool !== 'eraser' && currentTool !== 'laser' && (
           <div className="flex items-center gap-1 px-1 border-l border-slate-200 dark:border-slate-800">
             {COLOR_PRESETS.map((color) => (
               <button
@@ -735,29 +826,31 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         )}
 
         {/* Stroke Width Selector */}
-        <div className="flex items-center gap-1 px-1 border-l border-slate-200 dark:border-slate-800">
-          {STROKE_SIZES.map((sz) => (
-            <button
-              key={sz}
-              type="button"
-              onClick={() => setCurrentSize(sz)}
-              className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${
-                currentSize === sz
-                  ? 'bg-blue-100 text-blue-700 font-bold dark:bg-blue-900/60 dark:text-blue-200'
-                  : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-              }`}
-              title={`Grosor ${sz}px`}
-              aria-label={`Grosor ${sz}px`}
-            >
-              <span
-                className="rounded-full bg-current"
-                style={{ width: Math.min(14, sz + 2), height: Math.min(14, sz + 2) }}
-              />
-            </button>
-          ))}
-        </div>
+        {currentTool !== 'laser' && (
+          <div className="flex items-center gap-1 px-1 border-l border-slate-200 dark:border-slate-800">
+            {STROKE_SIZES.map((sz) => (
+              <button
+                key={sz}
+                type="button"
+                onClick={() => setCurrentSize(sz)}
+                className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${
+                  currentSize === sz
+                    ? 'bg-blue-100 text-blue-700 font-bold dark:bg-blue-900/60 dark:text-blue-200'
+                    : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+                title={`Grosor ${sz}px`}
+                aria-label={`Grosor ${sz}px`}
+              >
+                <span
+                  className="rounded-full bg-current"
+                  style={{ width: Math.min(14, sz + 2), height: Math.min(14, sz + 2) }}
+                />
+              </button>
+            ))}
+          </div>
+        )}
 
-        {/* Paper Style Selector - Clear & Intuitive */}
+        {/* Paper Style Selector */}
         <div className="flex items-center gap-1 px-1 border-l border-slate-200 dark:border-slate-800 relative">
           <select
             value={paperStyle}
@@ -766,7 +859,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             title="Cambiar tipo de papel de fondo"
             aria-label="Tipo de papel"
           >
-            <option value="blank">Liso (Sin líneas)</option>
+            <option value="blank">Blanco Liso (Sin líneas)</option>
             <option value="ruled">Líneas de Cuaderno</option>
             <option value="grid">Cuadrícula</option>
             <option value="dots">Puntos (Bullet)</option>
@@ -797,8 +890,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 </button>
               </div>
               <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-[11px]">
-                <strong>Líneas (Cuaderno):</strong> Guía para mantener la escritura recta y uniforme con el lápiz stylus.<br />
-                <strong>Liso (Sin líneas):</strong> Superficie limpia para dibujar libremente o crear diagramas sin distracciones.<br />
+                <strong>Blanco Liso:</strong> Hoja limpia perfecta para dibujar, esquemas o escribir sin ninguna línea.<br />
+                <strong>Líneas:</strong> Guía para mantener la escritura uniforme con el lápiz stylus.<br />
                 <strong>Cuadrícula:</strong> Ideal para gráficos, geometría y diagramas técnicos.
               </p>
             </div>
@@ -826,24 +919,24 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
             <span className="hidden xl:inline">Formas</span>
           </button>
 
-          {/* Tablet Palm Rejection Mode */}
+          {/* Palm Rejection Mode */}
           <button
             type="button"
             onClick={() => setPalmRejection(!palmRejection)}
-            className={`p-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-all ${
+            className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
               palmRejection
                 ? 'bg-emerald-600 text-white shadow-sm'
                 : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
             }`}
             title={
               palmRejection
-                ? 'Rechazo de palma ACTIVADO (Solo registra el lápiz stylus)'
-                : 'Rechazo de palma DESACTIVADO (Acepta stylus y dedos)'
+                ? 'Rechazo de Palma ACTIVADO: Solo dibuja el stylus, se ignoran toques de mano'
+                : 'Rechazo de Palma DESACTIVADO: Acepta lápiz y dedos'
             }
             aria-label="Rechazo de palma"
           >
             {palmRejection ? <ShieldCheck className="w-4 h-4 text-white" /> : <ShieldAlert className="w-4 h-4" />}
-            <span className="hidden md:inline">Palma</span>
+            <span className="hidden md:inline">{palmRejection ? 'Solo Stylus' : 'Rechazo Palma'}</span>
           </button>
         </div>
 
@@ -883,16 +976,17 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           <Trash2 className="w-4 h-4" />
         </button>
 
-        {/* Export / Zen Fullscreen */}
+        {/* Export Modal / Zen Fullscreen */}
         <div className="flex items-center gap-0.5 border-l border-slate-200 dark:border-slate-800 pl-1">
           <button
             type="button"
-            onClick={handleExportPNG}
-            className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-            title="Descargar dibujo como imagen PNG"
-            aria-label="Descargar imagen"
+            onClick={() => setIsExportModalOpen(true)}
+            className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1"
+            title="Exportar imagen PNG o imprimir PDF"
+            aria-label="Exportar"
           >
-            <Download className="w-4 h-4" />
+            <Share2 className="w-4 h-4" />
+            <span className="hidden xl:inline text-xs font-semibold">Exportar</span>
           </button>
 
           <button
@@ -907,7 +1001,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         </div>
       </div>
 
-      {/* Predictive Spanish Words Chips Bar (Non-intrusive floating bar) */}
+      {/* Predictive Spanish Words Chips Bar */}
       <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm rounded-full border border-slate-200/60 dark:border-slate-800/60 shadow-xs max-w-[92vw] overflow-x-auto">
         <span className="text-[10px] font-semibold text-slate-400 shrink-0 flex items-center gap-1">
           <Sparkles className="w-3 h-3 text-purple-500" />
@@ -945,143 +1039,170 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           className="block mx-auto cursor-crosshair shadow-md"
         />
 
-        {/* Rest Guard / Palm Shield overlay for comfortable hand resting */}
+        {/* Palm Rest Shield overlay for comfortable hand resting */}
         {showPalmShield && (
           <div
-            className="absolute bottom-0 left-0 right-0 h-28 bg-gradient-to-t from-slate-200/95 to-slate-200/70 dark:from-slate-800/95 dark:to-slate-800/70 backdrop-blur-sm border-t-2 border-dashed border-amber-400 z-20 flex items-center justify-between px-6 pointer-events-auto"
-            title="Área de reposo de la mano. Los toques en esta zona están protegidos."
+            className="absolute bottom-0 left-0 right-0 h-48 bg-slate-400/10 border-t-2 border-dashed border-slate-300 backdrop-blur-xs flex items-center justify-between px-6 z-20 pointer-events-auto"
+            style={{ touchAction: 'none' }}
           >
-            <div className="flex items-center gap-2 text-slate-700 dark:text-slate-200 font-medium text-xs">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
-              <span>Zona de reposo de muñeca y palma</span>
-            </div>
+            <span className="text-xs font-semibold text-slate-600 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              Zona de descanso de muñeca activa (los toques aquí no dibujan)
+            </span>
             <button
               type="button"
               onClick={() => setShowPalmShield(false)}
-              className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 underline"
+              className="px-3 py-1 bg-white text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-semibold shadow-xs border border-slate-200"
             >
-              Ocultar
+              Ocultar zona
             </button>
           </div>
         )}
       </div>
 
-      {/* Clean Collapsible Real-Time Handwriting Recognition Panel */}
-      <div className="relative z-30 bg-white/95 dark:bg-slate-900/95 border-t border-slate-200 dark:border-slate-800 px-4 py-2 shadow-lg transition-all">
-        <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
-          {/* Status & Preview snippet */}
-          <div className="flex items-center gap-2.5 flex-1 min-w-0">
-            <button
-              type="button"
-              onClick={() => setIsOcrBarExpanded(!isOcrBarExpanded)}
-              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              title={isOcrBarExpanded ? 'Minimizar barra' : 'Expandir opciones de transcripción'}
-            >
-              {isOcrBarExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-            </button>
+      {/* Multipage Notebook Navigator Bar (Bottom Center) */}
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-2xl shadow-xl border border-slate-200/80 dark:border-slate-800 flex items-center gap-2 text-xs select-none">
+        <button
+          type="button"
+          onClick={() => onPageChange?.(Math.max(0, currentPageIndex - 1))}
+          disabled={currentPageIndex <= 0}
+          className="p-1 rounded-lg text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+          title="Página anterior"
+          aria-label="Página anterior"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
 
-            <div
-              className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
-                isRecognizing ? 'bg-amber-100 text-amber-600 animate-spin' : 'bg-blue-100 text-blue-600'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-            </div>
+        <span className="font-bold text-slate-800 dark:text-slate-100 text-xs px-1">
+          Hoja {currentPageIndex + 1} de {totalPages}
+        </span>
 
-            <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 shrink-0">
-              Reconocimiento:
+        <button
+          type="button"
+          onClick={() => onPageChange?.(Math.min(totalPages - 1, currentPageIndex + 1))}
+          disabled={currentPageIndex >= totalPages - 1}
+          className="p-1 rounded-lg text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+          title="Página siguiente"
+          aria-label="Página siguiente"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+
+        <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
+
+        <button
+          type="button"
+          onClick={onAddPage}
+          className="px-2 py-1 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 hover:bg-blue-100 rounded-lg font-semibold flex items-center gap-1 transition-colors"
+          title="Agregar nueva página al cuaderno"
+          aria-label="Nueva Hoja"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span>Nueva Hoja</span>
+        </button>
+
+        {totalPages > 1 && (
+          <button
+            type="button"
+            onClick={() => onDeletePage?.(currentPageIndex)}
+            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+            title="Eliminar esta hoja"
+            aria-label="Eliminar hoja"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      {/* Floating OCR Recognition Bar */}
+      <div className="absolute bottom-16 sm:bottom-4 left-3 sm:left-4 z-20 max-w-[280px] sm:max-w-sm bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200/80 dark:border-slate-800 overflow-hidden transition-all duration-200">
+        <div className="px-3 py-2 flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-purple-600" />
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+              Texto Detectado (OCR)
             </span>
-
-            <div className="flex-1 min-w-0 bg-slate-100 dark:bg-slate-800/70 rounded-xl px-3 py-1 text-xs text-slate-800 dark:text-slate-200 truncate font-mono">
-              {recognizedText ? (
-                <span>{recognizedText}</span>
-              ) : (
-                <span className="text-slate-400 italic">Escribe en el lienzo con el lápiz para reconocer texto...</span>
-              )}
-            </div>
           </div>
-
-          {/* Quick inline buttons */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {recognizedText && (
-              <button
-                type="button"
-                onClick={() => onInsertTextIntoNote(recognizedText)}
-                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1 shadow-xs"
-                title="Insertar en la nota"
-              >
-                <Check className="w-3 h-3" />
-                <span className="hidden sm:inline">Insertar</span>
-              </button>
-            )}
-
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => triggerHandwritingRecognition()}
               disabled={isRecognizing || strokes.length === 0}
-              className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium transition-colors disabled:opacity-40"
+              className="px-2 py-0.5 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-md text-[11px] font-semibold disabled:opacity-40 transition-colors"
             >
-              Reconocer
+              {isRecognizing ? 'Analizando...' : 'Reconocer'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsOcrBarExpanded(!isOcrBarExpanded)}
+              className="p-1 text-slate-400 hover:text-slate-600 rounded-md"
+              aria-label={isOcrBarExpanded ? 'Colapsar barra OCR' : 'Expandir barra OCR'}
+            >
+              {isOcrBarExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
             </button>
           </div>
         </div>
 
-        {/* Expanded detailed actions */}
         {isOcrBarExpanded && (
-          <div className="max-w-6xl mx-auto pt-3 mt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
-            <div className="text-slate-500 text-[11px]">
-              {strokes.length} trazos manuscritos • {palmRejection ? 'Filtro de palma activo' : 'Táctil y stylus activos'}
-            </div>
-
-            <div className="flex items-center gap-2">
-              {recognizedText && (
-                <>
+          <div className="p-3 text-xs space-y-2">
+            {recognizedText ? (
+              <>
+                <p className="text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 max-h-32 overflow-y-auto leading-relaxed">
+                  {recognizedText}
+                </p>
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => onInsertTextIntoNote(recognizedText)}
+                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-[11px] flex items-center gap-1"
+                  >
+                    <FileText className="w-3 h-3" /> Insertar en Nota
+                  </button>
                   {onConvertToTasks && (
                     <button
                       type="button"
                       onClick={() => onConvertToTasks(recognizedText)}
-                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium flex items-center gap-1"
+                      className="px-2 py-1 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg font-medium text-[11px] flex items-center gap-1"
                     >
-                      <ListPlus className="w-3.5 h-3.5" />
-                      <span>A Tareas</span>
+                      <ListPlus className="w-3 h-3" /> Crear Tareas
                     </button>
                   )}
-
                   {onConvertToConceptMap && (
                     <button
                       type="button"
                       onClick={() => onConvertToConceptMap(recognizedText)}
-                      className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-medium flex items-center gap-1"
+                      className="px-2 py-1 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-lg font-medium text-[11px] flex items-center gap-1"
                     >
-                      <Network className="w-3.5 h-3.5" />
-                      <span>A Diagrama</span>
+                      <Network className="w-3 h-3" /> Crear Diagrama
                     </button>
                   )}
-
                   <button
                     type="button"
                     onClick={copyToClipboard}
-                    className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-lg"
+                    className="p-1 text-slate-500 hover:text-slate-800 rounded-md"
                     title="Copiar texto"
                   >
-                    {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
-                </>
-              )}
-
-              <label className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400 cursor-pointer ml-2">
-                <input
-                  type="checkbox"
-                  checked={autoRecognize}
-                  onChange={(e) => setAutoRecognize(e.target.checked)}
-                  className="rounded text-blue-600 focus:ring-0"
-                />
-                <span>Auto-reconocer al pausar</span>
-              </label>
-            </div>
+                </div>
+              </>
+            ) : (
+              <p className="text-[11px] text-slate-400 italic">
+                Escribe en el lienzo con el lápiz para reconocer el texto automáticamente...
+              </p>
+            )}
           </div>
         )}
       </div>
+
+      {/* Export Modal */}
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        title={noteTitle}
+        canvasElement={canvasRef.current}
+        textContent={noteContent || recognizedText}
+      />
     </div>
   );
 };

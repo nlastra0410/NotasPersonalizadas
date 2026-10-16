@@ -12,6 +12,8 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Search,
+  Database,
 } from 'lucide-react';
 
 interface TabletNavbarProps {
@@ -26,6 +28,8 @@ interface TabletNavbarProps {
   onToggleRightPane: () => void;
   onOpenVoiceRecorder: () => void;
   onExportNote: () => void;
+  onOpenSearch?: () => void;
+  onOpenBackup?: () => void;
 }
 
 export const TabletNavbar: React.FC<TabletNavbarProps> = ({
@@ -40,6 +44,8 @@ export const TabletNavbar: React.FC<TabletNavbarProps> = ({
   onToggleRightPane,
   onOpenVoiceRecorder,
   onExportNote,
+  onOpenSearch,
+  onOpenBackup,
 }) => {
   const currentNotebook = notebooks.find((n) => n.id === activeNote?.notebookId);
 
@@ -130,6 +136,35 @@ export const TabletNavbar: React.FC<TabletNavbarProps> = ({
 
       {/* Right: Actions */}
       <div className="flex items-center gap-1.5">
+        {/* Search button (Spotlight Ctrl+K) */}
+        {onOpenSearch && (
+          <button
+            type="button"
+            onClick={onOpenSearch}
+            className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 text-xs font-medium"
+            title="Buscar en notas manuscritas, voz, tareas y diagramas (Ctrl + K)"
+            aria-label="Buscar"
+          >
+            <Search className="w-4 h-4" />
+            <kbd className="hidden lg:inline px-1.5 py-0.5 text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded">
+              Ctrl+K
+            </kbd>
+          </button>
+        )}
+
+        {/* Local Backup button */}
+        {onOpenBackup && (
+          <button
+            type="button"
+            onClick={onOpenBackup}
+            className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            title="Copia de Seguridad y Restauración (100% offline)"
+            aria-label="Copia de seguridad"
+          >
+            <Database className="w-4 h-4" />
+          </button>
+        )}
+
         {/* Toggle Right Text Pane (only in Canvas mode) */}
         {activeTab === 'canvas' && (
           <button

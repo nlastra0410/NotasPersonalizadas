@@ -34,6 +34,8 @@ interface OrganizerSidebarProps {
   onExportBackup?: () => void;
   onImportBackup?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onResetAsNew?: () => void;
+  onOpenSearch?: () => void;
+  onOpenBackupModal?: () => void;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -50,6 +52,8 @@ export const OrganizerSidebar: React.FC<OrganizerSidebarProps> = ({
   onExportBackup,
   onImportBackup,
   onResetAsNew,
+  onOpenSearch,
+  onOpenBackupModal,
   isOpen,
   onClose,
 }) => {
@@ -136,9 +140,19 @@ export const OrganizerSidebar: React.FC<OrganizerSidebarProps> = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Buscar títulos, texto u OCR..."
-            className="w-full text-xs pl-9 pr-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full text-xs pl-9 pr-14 py-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             aria-label="Buscar notas"
           />
+          {onOpenSearch && (
+            <button
+              type="button"
+              onClick={onOpenSearch}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-slate-500 hover:text-blue-600 bg-white dark:bg-slate-700 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 shadow-2xs"
+              title="Abrir búsqueda global rápida (Ctrl+K)"
+            >
+              Ctrl+K
+            </button>
+          )}
         </div>
       </div>
 
@@ -436,6 +450,17 @@ export const OrganizerSidebar: React.FC<OrganizerSidebarProps> = ({
             En tu Tablet
           </span>
         </div>
+
+        {onOpenBackupModal && (
+          <button
+            type="button"
+            onClick={onOpenBackupModal}
+            className="w-full mb-2 px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Copia de Seguridad & Restauración</span>
+          </button>
+        )}
 
         <div className="grid grid-cols-2 gap-1.5">
           {onExportBackup && (

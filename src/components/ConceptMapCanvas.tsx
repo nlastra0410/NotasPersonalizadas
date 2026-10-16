@@ -23,7 +23,9 @@ import {
   Maximize2,
   Minimize2,
   Grid,
+  Share2,
 } from 'lucide-react';
+import { ExportModal } from './ExportModal';
 
 interface ConceptMapCanvasProps {
   graph: ConceptGraph;
@@ -380,6 +382,84 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
     if (onExportToNote) onExportToNote(md);
   };
 
+  // Export Modal state
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportCanvas, setExportCanvas] = useState<HTMLCanvasElement | null>(null);
+
+  const handleOpenExportModal = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1600;
+    canvas.height = 1200;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 1600, 1200);
+
+      // Draw subtle background grid
+      ctx.strokeStyle = '#f1f5f9';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < 1600; x += 32) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, 1200);
+        ctx.stroke();
+      }
+      for (let y = 0; y < 1200; y += 32) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(1600, y);
+        ctx.stroke();
+      }
+
+      // Draw edges
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 2.5;
+      for (const edge of graph.edges) {
+        const src = graph.nodes.find((n) => n.id === edge.sourceId);
+        const tgt = graph.nodes.find((n) => n.id === edge.targetId);
+        if (src && tgt) {
+          ctx.beginPath();
+          ctx.moveTo(src.x + 80, src.y + 35);
+          ctx.lineTo(tgt.x + 80, tgt.y + 35);
+          ctx.stroke();
+        }
+      }
+
+      // Draw nodes
+      for (const node of graph.nodes) {
+        const w = node.width || 160;
+        const h = node.height || 70;
+
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = node.color || '#3b82f6';
+        ctx.lineWidth = 3;
+
+        ctx.beginPath();
+        if (typeof ctx.roundRect === 'function') {
+          ctx.roundRect(node.x, node.y, w, h, 12);
+        } else {
+          ctx.rect(node.x, node.y, w, h);
+        }
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 14px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(node.label, node.x + w / 2, node.y + (node.description ? 30 : 40));
+
+        if (node.description) {
+          ctx.fillStyle = '#64748b';
+          ctx.font = '11px system-ui, sans-serif';
+          ctx.fillText(node.description.slice(0, 30), node.x + w / 2, node.y + 50);
+        }
+      }
+    }
+
+    setExportCanvas(canvas);
+    setIsExportModalOpen(true);
+  };
+
   const activeNode = graph.nodes.find((n) => n.id === selectedNodeId);
 
   return (
@@ -562,7 +642,18 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
               title="Copiar esquema de texto"
               aria-label="Copiar esquema"
             >
-              {copiedOutline ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+              {copiedOutline ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-slate-500" />}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleOpenExportModal}
+              className="p-1.5 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+              title="Exportar diagrama en imagen PNG, portapapeles o PDF"
+              aria-label="Exportar diagrama"
+            >
+              <Share2 className="w-4 h-4" />
+              <span className="hidden xl:inline">Exportar</span>
             </button>
           </div>
         </div>
@@ -1003,6 +1094,15 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
           </div>
         </div>
       )}
+
+      {/* Export & Print Modal */}
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        title={graph.title || 'Diagrama'}
+        canvasElement={exportCanvas}
+        textContent={graphToMarkdown(graph)}
+      />
     </div>
   );
 };

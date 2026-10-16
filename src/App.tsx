@@ -7,30 +7,27 @@ import {
   ActiveTab,
   PaperStyle,
 } from './types';
-import {
-  initialNotes,
-  initialNotebooks,
-  initialTasks,
-  initialConceptGraph,
-} from './data/initialData';
+import { initialNotebooks, initialNotes, initialTasks, initialConceptGraph } from './data/initialData';
 import { TabletNavbar } from './components/TabletNavbar';
 import { OrganizerSidebar } from './components/OrganizerSidebar';
 import { NoteEditorView } from './components/NoteEditorView';
 import { ConceptMapCanvas } from './components/ConceptMapCanvas';
 import { TodoList } from './components/TodoList';
 import { VoiceAudioRecorder } from './components/VoiceAudioRecorder';
+import { SpotlightSearchModal } from './components/SpotlightSearchModal';
+import { BackupModal } from './components/BackupModal';
+import { ExportModal } from './components/ExportModal';
 import { extractTasksFromText } from './utils/taskManager';
 import { textLinesToConceptNodes } from './utils/conceptMap';
 import { PanelLeftOpen } from 'lucide-react';
 
 export default function App() {
-  // State with LocalStorage persistence & clean start check
+  // Local-only state, initialized strictly from localStorage or clean initial data
   const [notes, setNotes] = useState<NoteItem[]>(() => {
     const saved = localStorage.getItem('notascribe_notes');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // If old mock notes were present, reset to clean blank state
         if (Array.isArray(parsed) && parsed.some((n: any) => n.title?.includes('Arquitectura de App') || n.title?.includes('Biología Celular'))) {
           localStorage.removeItem('notascribe_notes');
           return initialNotes;
@@ -97,6 +94,23 @@ export default function App() {
   const [isRightPaneOpen, setIsRightPaneOpen] = useState<boolean>(false);
   const [isVoiceRecorderOpen, setIsVoiceRecorderOpen] = useState<boolean>(false);
 
+  // New Modals: Spotlight Search, Backup, and Export
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState<boolean>(false);
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+
+  // Keyboard shortcut listener for Ctrl+K / Cmd+K
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsSearchModalOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // Persistence effects
   useEffect(() => {
     localStorage.setItem('notascribe_notes', JSON.stringify(notes));
@@ -130,13 +144,15 @@ export default function App() {
   };
 
   const handleCreateNote = (notebookId?: string) => {
-    const targetNotebook = notebookId || notebooks[0]?.id || 'nb-personal';
+    const targetNotebook = notebookId || notebooks[0]?.id || 'nb-general';
     const newNote: NoteItem = {
       id: `note-${Date.now()}`,
-      title: 'Nueva Nota Manuscrita',
+      title: 'Nueva Hoja Blanca',
       content: '',
       strokes: [],
-      paperStyle: 'ruled',
+      pages: [[]],
+      activePageIndex: 0,
+      paperStyle: 'blank', // Blank paper by default as requested
       notebookId: targetNotebook,
       tags: [],
       isPinned: false,
@@ -145,21 +161,26 @@ export default function App() {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-
     setNotes([newNote, ...notes]);
     setActiveNoteId(newNote.id);
     setActiveTab('canvas');
   };
 
   const handleDeleteNote = (id: string) => {
-    setNotes((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, isDeleted: true, updatedAt: Date.now() } : n))
-    );
+    setNotes(notes.filter((n) => n.id !== id));
+    if (activeNoteId === id) {
+      const remaining = notes.filter((n) => n.id !== id);
+      if (remaining.length > 0) {
+        setActiveNoteId(remaining[0].id);
+      } else {
+        handleCreateNote();
+      }
+    }
   };
 
   const handleTogglePinNote = (id: string) => {
-    setNotes((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, isPinned: !n.isPinned } : n))
+    setNotes(
+      notes.map((n) => (n.id === id ? { ...n, isPinned: !n.isPinned } : n))
     );
   };
 
@@ -173,14 +194,12 @@ export default function App() {
     setNotebooks([...notebooks, newNb]);
   };
 
-  // Cross-feature connections:
-  // Convert OCR or Voice text to Tasks
+  // Cross-feature connections
   const handleConvertToTasks = (text: string) => {
     const extracted = extractTasksFromText(text, 'medium');
     if (extracted.length > 0) {
       setTasks((prev) => [...extracted, ...prev]);
     } else {
-      // Create single task from line
       const singleTask: TaskItem = {
         id: `task-${Date.now()}`,
         text: text.slice(0, 100),
@@ -193,7 +212,6 @@ export default function App() {
     setActiveTab('tasks');
   };
 
-  // Convert OCR or Voice text to Concept Map
   const handleConvertToConceptMap = (text: string) => {
     const lines = text
       .split('\n')
@@ -217,7 +235,6 @@ export default function App() {
     setActiveTab('concept');
   };
 
-  // Insert text into note from Voice or Concept Map
   const handleInsertTextIntoActiveNote = (text: string) => {
     if (!activeNote) return;
     const updatedContent = activeNote.content
@@ -231,67 +248,32 @@ export default function App() {
     });
   };
 
-  // Export note as text file or print
-  const handleExportNote = () => {
-    if (!activeNote) return;
-    const blob = new Blob([`${activeNote.title}\n\n${activeNote.content}`], {
-      type: 'text/markdown;charset=utf-8',
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${activeNote.title || 'nota'}.md`;
-    link.click();
-    URL.revokeObjectURL(url);
+  const handleSelectSearchResult = (tab: ActiveTab, targetId: string) => {
+    setActiveTab(tab);
+    if (tab === 'canvas') {
+      setActiveNoteId(targetId);
+    }
   };
 
-  // Local JSON Backup Export
-  const handleExportBackup = () => {
-    const backupData = {
-      notes,
-      notebooks,
-      tasks,
-      conceptGraph,
-      version: 1,
-      exportedAt: Date.now(),
-    };
-    const blob = new Blob([JSON.stringify(backupData, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `notascribe-respaldo-${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
+  const handleApplyRestoredData = (data: {
+    notes: NoteItem[];
+    notebooks: Notebook[];
+    tasks: TaskItem[];
+    conceptGraphs: ConceptGraph[];
+  }) => {
+    setNotes(data.notes);
+    setNotebooks(data.notebooks);
+    setTasks(data.tasks);
+    if (data.conceptGraphs.length > 0) {
+      setConceptGraph(data.conceptGraphs[0]);
+    }
+    if (data.notes[0]?.id) {
+      setActiveNoteId(data.notes[0].id);
+    }
   };
 
-  // Local JSON Backup Import
-  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const imported = JSON.parse(event.target?.result as string);
-        if (imported.notes && Array.isArray(imported.notes)) {
-          setNotes(imported.notes);
-          if (imported.notebooks) setNotebooks(imported.notebooks);
-          if (imported.tasks) setTasks(imported.tasks);
-          if (imported.conceptGraph) setConceptGraph(imported.conceptGraph);
-          if (imported.notes[0]?.id) setActiveNoteId(imported.notes[0].id);
-        }
-      } catch (err) {
-        console.error('Error importando copia de seguridad:', err);
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
-
-  // Reset to brand new software state
   const handleResetAsNew = () => {
-    if (window.confirm('¿Deseas dejar la app como nueva? Se limpiarán todas las notas y tareas locales de prueba.')) {
+    if (window.confirm('¿Deseas dejar la app como nueva? Se limpiarán todas las notas y tareas locales.')) {
       localStorage.removeItem('notascribe_notes');
       localStorage.removeItem('notascribe_notebooks');
       localStorage.removeItem('notascribe_active_note_id');
@@ -320,12 +302,13 @@ export default function App() {
         isRightPaneOpen={isRightPaneOpen}
         onToggleRightPane={() => setIsRightPaneOpen(!isRightPaneOpen)}
         onOpenVoiceRecorder={() => setIsVoiceRecorderOpen(true)}
-        onExportNote={handleExportNote}
+        onExportNote={() => setIsExportModalOpen(true)}
+        onOpenSearch={() => setIsSearchModalOpen(true)}
+        onOpenBackup={() => setIsBackupModalOpen(true)}
       />
 
-      {/* Main Tablet Workspace */}
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* Organizer Sidebar */}
+      {/* Main Workspace: Sidebar & Main View */}
+      <div className="flex-1 w-full flex overflow-hidden relative">
         <OrganizerSidebar
           notes={notes}
           notebooks={notebooks}
@@ -333,16 +316,14 @@ export default function App() {
           onSelectNote={(id) => {
             setActiveNoteId(id);
             setActiveTab('canvas');
-            // On small mobile viewports, auto-close sidebar on select
-            if (window.innerWidth < 768) setIsSidebarOpen(false);
           }}
           onCreateNote={handleCreateNote}
           onDeleteNote={handleDeleteNote}
           onTogglePinNote={handleTogglePinNote}
           onCreateNotebook={handleCreateNotebook}
-          onExportBackup={handleExportBackup}
-          onImportBackup={handleImportBackup}
           onResetAsNew={handleResetAsNew}
+          onOpenSearch={() => setIsSearchModalOpen(true)}
+          onOpenBackupModal={() => setIsBackupModalOpen(true)}
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
         />
@@ -386,7 +367,7 @@ export default function App() {
                     onClick={() => handleCreateNote()}
                     className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-semibold"
                   >
-                    Crear Nueva Nota
+                    Crear Nueva Hoja
                   </button>
                 </div>
               </div>
@@ -421,6 +402,38 @@ export default function App() {
         onConvertToTasks={handleConvertToTasks}
         onConvertToConceptMap={handleConvertToConceptMap}
       />
+
+      {/* Spotlight Universal Search Modal (Ctrl+K) */}
+      <SpotlightSearchModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        notes={notes}
+        tasks={tasks}
+        conceptGraph={conceptGraph}
+        onSelectResult={handleSelectSearchResult}
+      />
+
+      {/* Local Offline Backup & Restore Modal */}
+      <BackupModal
+        isOpen={isBackupModalOpen}
+        onClose={() => setIsBackupModalOpen(false)}
+        notes={notes}
+        notebooks={notebooks}
+        tasks={tasks}
+        conceptGraph={conceptGraph}
+        onRestore={handleApplyRestoredData}
+      />
+
+      {/* Export & Print Modal for Active Note */}
+      {activeNote && (
+        <ExportModal
+          isOpen={isExportModalOpen}
+          onClose={() => setIsExportModalOpen(false)}
+          title={activeNote.title}
+          canvasElement={document.querySelector('canvas')}
+          textContent={activeNote.content || activeNote.ocrText}
+        />
+      )}
     </div>
   );
 }

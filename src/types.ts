@@ -1,4 +1,4 @@
-export type PenTool = 'pen' | 'fountain' | 'highlighter' | 'brush' | 'eraser';
+export type PenTool = 'pen' | 'fountain' | 'highlighter' | 'brush' | 'eraser' | 'laser';
 
 export type PaperStyle = 'ruled' | 'grid' | 'dots' | 'cornell' | 'blank' | 'dark_board';
 
@@ -31,7 +31,9 @@ export interface NoteItem {
   id: string;
   title: string;
   content: string; // typed markdown / text
-  strokes: Stroke[]; // handwritten ink strokes
+  strokes: Stroke[]; // handwritten ink strokes for page 1 (backward compat)
+  pages?: Stroke[][]; // multipage support: array of stroke pages
+  activePageIndex?: number;
   paperStyle: PaperStyle;
   notebookId: string;
   tags: string[];
@@ -94,3 +96,23 @@ export interface ConceptGraph {
 }
 
 export type ActiveTab = 'canvas' | 'organizer' | 'tasks' | 'concept';
+
+export interface SearchResultItem {
+  id: string;
+  type: 'note' | 'handwriting' | 'audio' | 'task' | 'diagram';
+  title: string;
+  snippet: string;
+  targetTab: ActiveTab;
+  targetId: string;
+  subTargetId?: string;
+}
+
+export interface AppBackupData {
+  version: number;
+  exportedAt: number;
+  appName: string;
+  notes: NoteItem[];
+  notebooks: Notebook[];
+  tasks: TaskItem[];
+  conceptGraphs: ConceptGraph[];
+}

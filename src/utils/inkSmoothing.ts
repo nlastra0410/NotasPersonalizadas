@@ -9,7 +9,7 @@ export interface Point {
   time?: number;
 }
 
-export type PenTool = 'pen' | 'fountain' | 'highlighter' | 'brush' | 'eraser';
+export type PenTool = 'pen' | 'fountain' | 'highlighter' | 'brush' | 'eraser' | 'laser';
 
 export interface Stroke {
   id: string;

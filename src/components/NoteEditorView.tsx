@@ -14,6 +14,13 @@ import {
   ListPlus,
   Network,
 } from 'lucide-react';
+import {
+  getNotePages,
+  getCurrentPageStrokes,
+  updateNotePageStrokes,
+  addPageToNote,
+  deletePageFromNote,
+} from '../utils/multipageNote';
 
 interface NoteEditorViewProps {
   note: NoteItem;
@@ -35,11 +42,25 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
   const [newTagInput, setNewTagInput] = useState<string>('');
   const [viewLayout, setViewLayout] = useState<'canvas' | 'split' | 'text'>('split');
 
-  const handleStrokesChange = (strokes: Stroke[]) => {
-    onUpdateNote({
-      strokes,
-      updatedAt: Date.now(),
-    });
+  const currentPageIndex = note.activePageIndex ?? 0;
+  const pages = getNotePages(note);
+  const currentStrokes = getCurrentPageStrokes(note, currentPageIndex);
+
+  const handleStrokesChange = (newStrokes: Stroke[]) => {
+    const updated = updateNotePageStrokes(note, currentPageIndex, newStrokes);
+    onUpdateNote(updated);
+  };
+
+  const handlePageChange = (idx: number) => {
+    onUpdateNote({ activePageIndex: idx });
+  };
+
+  const handleAddPage = () => {
+    onUpdateNote(addPageToNote(note));
+  };
+
+  const handleDeletePage = (idx: number) => {
+    onUpdateNote(deletePageFromNote(note, idx));
   };
 
   const handlePaperStyleChange = (paperStyle: PaperStyle) => {
@@ -77,9 +98,10 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
     });
   };
 
-  // Determine if canvas and text are visible based on isRightPaneOpen and viewLayout
   const showCanvas = viewLayout !== 'text';
   const showTextPane = isRightPaneOpen && viewLayout !== 'canvas';
+
+  const totalStrokes = pages.reduce((acc, p) => acc + p.length, 0);
 
   return (
     <div className="flex-1 w-full h-full flex flex-col overflow-hidden bg-slate-100 dark:bg-slate-950 relative">
@@ -101,7 +123,7 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
                   ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
-              title="Ocultar texto y escribir en pantalla completa"
+              title="Mostrar únicamente la hoja en blanco / cuaderno"
             >
               <PenTool className="w-3 h-3" />
               <span>Solo Lienzo</span>
@@ -118,7 +140,7 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
                   ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
-              title="Ver Lienzo y Texto lado a lado"
+              title="Ver el lienzo a la izquierda y el texto/transcripciones a la derecha"
             >
               <Columns2 className="w-3 h-3" />
               <span>Ver Ambos (Dividido)</span>
@@ -131,11 +153,11 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
                 if (!isRightPaneOpen) onToggleRightPane();
               }}
               className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center gap-1 ${
-                viewLayout === 'text'
+                isRightPaneOpen && viewLayout === 'text'
                   ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
-              title="Solo notas mecanografiadas y transcripciones"
+              title="Mostrar únicamente el editor de texto y transcripción"
             >
               <FileText className="w-3 h-3" />
               <span>Solo Texto</span>
@@ -145,7 +167,9 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
 
         {/* Note quick info */}
         <div className="flex items-center gap-3 text-[11px] text-slate-500">
-          <span>{note.strokes?.length || 0} trazos</span>
+          <span>{pages.length} {pages.length === 1 ? 'página' : 'páginas'}</span>
+          <span>•</span>
+          <span>{totalStrokes} trazos</span>
           <span>•</span>
           <span>{note.content ? `${note.content.split(/\s+/).filter(Boolean).length} palabras` : '0 palabras'}</span>
         </div>
@@ -157,13 +181,20 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
         {showCanvas && (
           <div className="flex-1 h-full relative overflow-hidden flex flex-col min-w-0">
             <HandwritingCanvas
-              strokes={note.strokes}
+              strokes={currentStrokes}
               onStrokesChange={handleStrokesChange}
               paperStyle={note.paperStyle}
               onPaperStyleChange={handlePaperStyleChange}
               onInsertTextIntoNote={handleInsertTextIntoNote}
               onConvertToTasks={onConvertToTasks}
               onConvertToConceptMap={onConvertToConceptMap}
+              pages={pages}
+              currentPageIndex={currentPageIndex}
+              onPageChange={handlePageChange}
+              onAddPage={handleAddPage}
+              onDeletePage={handleDeletePage}
+              noteTitle={note.title}
+              noteContent={note.content}
             />
 
             {/* Floating edge tab to open text pane when minimized */}
@@ -219,83 +250,98 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
                     <button
                       type="button"
                       onClick={() => handleRemoveTag(tag)}
-                      className="hover:text-rose-600"
-                      aria-label={`Quitar etiqueta ${tag}`}
+                      className="hover:text-rose-500 font-bold ml-0.5"
                     >
                       ×
                     </button>
                   </span>
                 ))}
               </div>
-
-              <form onSubmit={handleAddTag} className="flex items-center gap-1">
-                <TagIcon className="w-3 h-3 text-slate-400" />
+              <form onSubmit={handleAddTag} className="flex items-center gap-1.5">
+                <TagIcon className="w-3.5 h-3.5 text-slate-400" />
                 <input
                   type="text"
                   value={newTagInput}
                   onChange={(e) => setNewTagInput(e.target.value)}
-                  placeholder="Añadir etiqueta (#idea, #trabajo)..."
-                  className="text-[11px] bg-transparent flex-1 focus:outline-none text-slate-800 dark:text-slate-200"
-                  aria-label="Nueva etiqueta"
+                  placeholder="Agregar etiqueta y presiona Enter..."
+                  className="flex-1 text-xs bg-transparent focus:outline-none placeholder:text-slate-400 dark:text-slate-100"
                 />
               </form>
             </div>
 
-            {/* Audio Note Transcript Card (if attached) */}
+            {/* Audio Note Transcript Box if recorded */}
             {note.audioNote && (
-              <div className="m-3 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200/80 dark:border-rose-900/60">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-rose-700 dark:text-rose-300 mb-1">
-                  <Volume2 className="w-3.5 h-3.5" />
-                  <span>Nota de Voz</span>
+              <div className="m-3 p-3 bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/80 dark:border-rose-900/40 rounded-xl text-xs space-y-2">
+                <div className="flex items-center justify-between text-rose-700 dark:text-rose-300 font-semibold">
+                  <span className="flex items-center gap-1.5">
+                    <Volume2 className="w-4 h-4" /> Dictado por Voz
+                  </span>
+                  <span className="text-[10px] font-normal text-rose-500">
+                    {new Date(note.audioNote.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
                 </div>
-                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed italic">
-                  &quot;{note.audioNote.transcript}&quot;
+                <p className="text-slate-700 dark:text-slate-200 text-xs italic bg-white/80 dark:bg-slate-900/80 p-2 rounded-lg border border-rose-100 dark:border-rose-950">
+                  &ldquo;{note.audioNote.transcript}&rdquo;
                 </p>
+                <div className="flex items-center gap-2 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => handleInsertTextIntoNote(note.audioNote!.transcript)}
+                    className="text-[11px] font-semibold text-rose-700 hover:underline"
+                  >
+                    + Agregar al texto
+                  </button>
+                  {onConvertToTasks && (
+                    <button
+                      type="button"
+                      onClick={() => onConvertToTasks(note.audioNote!.transcript)}
+                      className="text-[11px] font-semibold text-amber-700 hover:underline"
+                    >
+                      + Convertir a tareas
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
-            {/* Typed Editor Textarea */}
+            {/* Typed Textarea */}
             <div className="flex-1 p-3 flex flex-col">
               <textarea
                 value={note.content}
-                onChange={(e) =>
-                  onUpdateNote({
-                    content: e.target.value,
-                    updatedAt: Date.now(),
-                  })
-                }
-                placeholder="Escribe notas aquí o pega dictados por voz y transcripciones..."
-                className="w-full flex-1 resize-none bg-transparent text-xs md:text-sm text-slate-800 dark:text-slate-200 leading-relaxed focus:outline-none font-sans"
-                aria-label="Cuerpo de la nota"
+                onChange={(e) => onUpdateNote({ content: e.target.value, updatedAt: Date.now() })}
+                placeholder="Escribe tus notas en limpio aquí, o transfiere tus apuntes manuscritos y dictados de voz..."
+                className="w-full flex-1 p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-xs text-slate-800 dark:text-slate-200 leading-relaxed font-sans"
               />
             </div>
 
             {/* Quick Actions Footer */}
-            {note.content && (
-              <div className="p-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between text-xs">
-                {onConvertToTasks && (
+            <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between gap-2">
+              <span className="text-[10px] text-slate-400">
+                Guardado automático local
+              </span>
+              <div className="flex items-center gap-1.5">
+                {onConvertToTasks && note.content && (
                   <button
                     type="button"
                     onClick={() => onConvertToTasks(note.content)}
-                    className="px-2 py-1 text-[11px] text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg flex items-center gap-1 font-medium"
+                    className="px-2 py-1 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg text-[11px] font-medium flex items-center gap-1"
+                    title="Extraer tareas pendientes del texto"
                   >
-                    <ListPlus className="w-3 h-3" />
-                    <span>Extraer Tareas</span>
+                    <ListPlus className="w-3 h-3" /> Tareas
                   </button>
                 )}
-
-                {onConvertToConceptMap && (
+                {onConvertToConceptMap && note.content && (
                   <button
                     type="button"
                     onClick={() => onConvertToConceptMap(note.content)}
-                    className="px-2 py-1 text-[11px] text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 rounded-lg flex items-center gap-1 font-medium"
+                    className="px-2 py-1 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-lg text-[11px] font-medium flex items-center gap-1"
+                    title="Generar diagrama conceptual a partir del texto"
                   >
-                    <Network className="w-3 h-3" />
-                    <span>Crear Diagrama</span>
+                    <Network className="w-3 h-3" /> Diagrama
                   </button>
                 )}
               </div>
-            )}
+            </div>
           </aside>
         )}
       </div>
