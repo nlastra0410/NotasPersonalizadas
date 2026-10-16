@@ -12,9 +12,6 @@ import {
   getStrokesBoundingBox,
 } from '../utils/inkSmoothing';
 import {
-  predictNextPoint,
-  detectGeometricShape,
-  generateCleanShapePoints,
   getSpanishWordPredictions,
 } from '../utils/predictiveInk';
 import {
@@ -111,21 +108,41 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [activeStroke, setActiveStroke] = useState<Stroke | null>(null);
   const activeStrokeRef = useRef<Stroke | null>(null);
+  const activePointerIdRef = useRef<number | null>(null);
   const lastPressureRef = useRef<number>(0.5);
 
   // Laser Pointer state (fading neon trail for presentations)
   const laserPointsRef = useRef<Array<{ x: number; y: number; time: number }>>([]);
   const laserAnimRef = useRef<number | null>(null);
 
-  // Tablet-specific modes & predictive features
-  const [palmRejection, setPalmRejection] = useState<boolean>(true); // Activo por defecto para evitar toques accidentales de la mano
+  // Tablet-specific modes & stylus state
+  const [palmRejection, setPalmRejection] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('notascribe_palm_rejection');
+      if (saved !== null) return saved === 'true';
+    }
+    return true; // Rechazo de palma inteligente activo por defecto
+  });
+  const [stylusOnlyMode, setStylusOnlyMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('notascribe_stylus_only');
+      if (saved !== null) return saved === 'true';
+    }
+    return false;
+  });
+  const [isStylusDetected, setIsStylusDetected] = useState<boolean>(false);
   const [showPalmShield, setShowPalmShield] = useState<boolean>(false);
   const [isZenMode, setIsZenMode] = useState<boolean>(false);
-  const [predictiveShapes, setPredictiveShapes] = useState<boolean>(false); // DESACTIVADO por defecto para que NUNCA transforme la escritura en figuras
-  const [predictiveStylus, setPredictiveStylus] = useState<boolean>(false); // Trazo 1:1 real con el lápiz
+  const [predictiveStylus, setPredictiveStylus] = useState<boolean>(false);
   const [showPaperHelp, setShowPaperHelp] = useState<boolean>(false);
   const [showWordSuggestions, setShowWordSuggestions] = useState<boolean>(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+
+  const strokesRef = useRef<Stroke[]>(strokes);
+  strokesRef.current = strokes;
+
+  const isDrawingRef = useRef<boolean>(false);
+  const activePointerTypeRef = useRef<string | null>(null);
   const [toolbarPosition, setToolbarPosition] = useState<ToolbarPosition>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('notascribe_toolbar_pos');
@@ -338,7 +355,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         return;
       }
 
-      // Pen, Fountain, Brush with dynamic pressure
+      // Pen, Fountain, Brush
       ctx.strokeStyle = stroke.color;
       ctx.globalAlpha = stroke.opacity;
 
@@ -352,38 +369,51 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         return;
       }
 
-      for (let i = 0; i < points.length - 1; i++) {
-        const p1 = points[i];
-        const p2 = points[i + 1];
-        const mid = getMidPoint(p1, p2);
+      if (stroke.tool === 'fountain' || stroke.tool === 'brush') {
+        for (let i = 0; i < points.length - 1; i++) {
+          const p1 = points[i];
+          const p2 = points[i + 1];
+          const mid = getMidPoint(p1, p2);
 
-        const currentWidth = getDynamicStrokeWidth(
-          stroke.size,
-          stroke.tool,
-          (p1.pressure ?? 0.5) + (p2.pressure ?? 0.5) / 2
-        );
+          const currentWidth = getDynamicStrokeWidth(
+            stroke.size,
+            stroke.tool,
+            ((p1.pressure ?? 0.5) + (p2.pressure ?? 0.5)) / 2
+          );
 
-        ctx.lineWidth = currentWidth;
-        ctx.beginPath();
+          ctx.lineWidth = currentWidth;
+          ctx.beginPath();
 
-        if (i === 0) {
-          ctx.moveTo(p1.x, p1.y);
-          ctx.lineTo(mid.x, mid.y);
-        } else {
-          const prevMid = getMidPoint(points[i - 1], p1);
-          ctx.moveTo(prevMid.x, prevMid.y);
-          ctx.quadraticCurveTo(p1.x, p1.y, mid.x, mid.y);
+          if (i === 0) {
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(mid.x, mid.y);
+          } else {
+            const prevMid = getMidPoint(points[i - 1], p1);
+            ctx.moveTo(prevMid.x, prevMid.y);
+            ctx.quadraticCurveTo(p1.x, p1.y, mid.x, mid.y);
+          }
+
+          ctx.stroke();
         }
 
-        ctx.stroke();
-      }
-
-      if (points.length > 2) {
-        const lastIdx = points.length - 1;
-        const prevMid = getMidPoint(points[lastIdx - 1], points[lastIdx]);
+        if (points.length > 2) {
+          const lastIdx = points.length - 1;
+          const prevMid = getMidPoint(points[lastIdx - 1], points[lastIdx]);
+          ctx.beginPath();
+          ctx.moveTo(prevMid.x, prevMid.y);
+          ctx.lineTo(points[lastIdx].x, points[lastIdx].y);
+          ctx.stroke();
+        }
+      } else {
+        // Standard pen: single continuous path with quadratic smoothing for 120Hz zero-lag ink
+        ctx.lineWidth = stroke.size;
         ctx.beginPath();
-        ctx.moveTo(prevMid.x, prevMid.y);
-        ctx.lineTo(points[lastIdx].x, points[lastIdx].y);
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 0; i < points.length - 1; i++) {
+          const mid = getMidPoint(points[i], points[i + 1]);
+          ctx.quadraticCurveTo(points[i].x, points[i].y, mid.x, mid.y);
+        }
+        ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
         ctx.stroke();
       }
 
@@ -455,7 +485,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     drawBackground(ctx, dimensions.width, dimensions.height);
@@ -523,11 +553,115 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     }
   };
 
-  // High-performance pointer handlers with Coalesced Stylus Events & Zero-Lag Drawing
-  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    // Palm Rejection: If active and a pen is present, ignore accidental palm or touch gestures
-    if (palmRejection && e.pointerType === 'touch') {
+  // Centralized stroke commitment helper: saves stroke without any shape distortion
+  const commitCurrentStroke = useCallback(() => {
+    if (!isDrawingRef.current) return;
+    isDrawingRef.current = false;
+    setIsDrawing(false);
+    activePointerIdRef.current = null;
+    activePointerTypeRef.current = null;
+
+    if (currentTool === 'laser') {
+      scheduleLaserFade();
       return;
+    }
+
+    const currentStroke = activeStrokeRef.current;
+    if (currentStroke && currentStroke.points.length > 0) {
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext('2d');
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const pts = currentStroke.points;
+
+      // Close remaining segment to last point
+      if (ctx && pts.length > 2) {
+        const lastIdx = pts.length - 1;
+        const prevMid = getMidPoint(pts[lastIdx - 1], pts[lastIdx]);
+        ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        applyStrokeStyle(
+          ctx,
+          currentTool,
+          currentColor,
+          currentSize,
+          pts[lastIdx].pressure ?? 0.5
+        );
+        ctx.beginPath();
+        ctx.moveTo(prevMid.x, prevMid.y);
+        ctx.lineTo(pts[lastIdx].x, pts[lastIdx].y);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // PURE HANDWRITING GUARANTEE: Never transform handwriting into shapes!
+      // The user's handwriting is sacred and remains 100% natural, unaltered ink.
+      const newStrokes = [...strokesRef.current, currentStroke];
+      onStrokesChange(newStrokes);
+
+      setHistory((prev) => {
+        const newHist = prev.slice(0, historyIndex + 1);
+        newHist.push(newStrokes);
+        return newHist;
+      });
+      setHistoryIndex((prev) => prev + 1);
+
+      // Reconcile canvas once stroke is committed
+      redraw();
+
+      if (autoRecognize) {
+        if (autoRecognizeTimerRef.current) {
+          clearTimeout(autoRecognizeTimerRef.current);
+        }
+        autoRecognizeTimerRef.current = setTimeout(() => {
+          triggerHandwritingRecognition(newStrokes);
+        }, 4500);
+      }
+    }
+
+    activeStrokeRef.current = null;
+    setActiveStroke(null);
+  }, [
+    currentTool,
+    currentColor,
+    currentSize,
+    historyIndex,
+    onStrokesChange,
+    redraw,
+    autoRecognize,
+    scheduleLaserFade,
+  ]);
+
+  // High-performance pointer handlers with Coalesced Stylus Events & Smart Palm Prioritization
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const isPen = e.pointerType === 'pen';
+
+    if (isPen) {
+      setIsStylusDetected(true);
+      // Stylus takes absolute priority: if an accidental palm touch was active, commit it and give control to the pen
+      if (isDrawingRef.current && activeStrokeRef.current) {
+        commitCurrentStroke();
+      }
+      activePointerIdRef.current = e.pointerId;
+      activePointerTypeRef.current = 'pen';
+    } else {
+      // If user enabled "Solo Stylus" mode, completely ignore fingers and palms
+      if (stylusOnlyMode) {
+        return;
+      }
+      // If stylus is currently writing, ignore secondary palm touches
+      if (isDrawingRef.current && activePointerTypeRef.current === 'pen') {
+        return;
+      }
+      // Palm geometry rejection: large contact patch (> 35px) is a resting palm
+      if (palmRejection && (e.width > 35 || e.height > 35)) {
+        return;
+      }
+      // If already drawing with another touch, commit previous stroke first to avoid blocking the canvas
+      if (isDrawingRef.current && activeStrokeRef.current) {
+        commitCurrentStroke();
+      }
+      activePointerIdRef.current = e.pointerId;
+      activePointerTypeRef.current = e.pointerType || 'touch';
     }
 
     const canvas = canvasRef.current;
@@ -536,17 +670,18 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     try {
       canvas.setPointerCapture(e.pointerId);
     } catch {
-      // Ignore if pointer capture fails
+      // Pointer capture fallback
     }
 
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const rawPressure = e.pressure > 0 ? e.pressure : 0.5;
+    const rawPressure = typeof e.pressure === 'number' && e.pressure > 0 ? e.pressure : 0.5;
     lastPressureRef.current = rawPressure;
 
     if (currentTool === 'laser') {
       laserPointsRef.current.push({ x, y, time: Date.now() });
+      isDrawingRef.current = true;
       setIsDrawing(true);
       scheduleLaserFade();
       return;
@@ -563,12 +698,13 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     };
 
     activeStrokeRef.current = newStroke;
+    isDrawingRef.current = true;
     setIsDrawing(true);
 
     // Draw initial dot immediately onto canvas
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       applyStrokeStyle(ctx, currentTool, currentColor, currentSize, rawPressure);
@@ -586,8 +722,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || !activeStrokeRef.current) return;
-    if (palmRejection && e.pointerType === 'touch') return;
+    if (!isDrawingRef.current || !activeStrokeRef.current) return;
+    if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -602,15 +738,22 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       return;
     }
 
-    // Capture coalesced events emitted by Lenovo Tab Pen / S-Pen for 120-240Hz fidelity
+    // Safely capture coalesced events emitted by Lenovo Tab Pen / S-Pen for 120-240Hz fidelity
+    let coalescedList: Array<{ clientX: number; clientY: number; pressure?: number }> = [e];
     const nativeEvt = e.nativeEvent as any;
-    const coalescedList: Array<{ clientX: number; clientY: number; pressure?: number }> =
-      nativeEvt && typeof nativeEvt.getCoalescedEvents === 'function' && nativeEvt.getCoalescedEvents().length > 0
-        ? nativeEvt.getCoalescedEvents()
-        : [e];
+    if (nativeEvt && typeof nativeEvt.getCoalescedEvents === 'function') {
+      try {
+        const events = nativeEvt.getCoalescedEvents();
+        if (events && events.length > 0) {
+          coalescedList = events;
+        }
+      } catch {
+        coalescedList = [e];
+      }
+    }
 
     const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     for (const item of coalescedList) {
       const x = item.clientX - rect.left;
@@ -618,7 +761,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       const rawPressure = typeof item.pressure === 'number' && item.pressure > 0 ? item.pressure : 0.5;
 
       // Smooth pressure curve to prevent sudden blobs
-      const smoothedPressure = lastPressureRef.current * 0.6 + rawPressure * 0.4;
+      const smoothedPressure = lastPressureRef.current * 0.3 + rawPressure * 0.7;
       lastPressureRef.current = smoothedPressure;
 
       const newPoint: Point = { x, y, pressure: smoothedPressure, time: Date.now() };
@@ -652,84 +795,53 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     }
   };
 
-  const handlePointerUp = () => {
-    if (!isDrawing) return;
-    setIsDrawing(false);
-
-    if (currentTool === 'laser') {
-      scheduleLaserFade();
-      return;
-    }
-
-    const currentStroke = activeStrokeRef.current;
-    if (currentStroke && currentStroke.points.length > 0) {
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext('2d');
-      const dpr = window.devicePixelRatio || 1;
-      const pts = currentStroke.points;
-
-      // Close remaining segment to last point
-      if (ctx && pts.length > 2) {
-        const lastIdx = pts.length - 1;
-        const prevMid = getMidPoint(pts[lastIdx - 1], pts[lastIdx]);
-        ctx.save();
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        applyStrokeStyle(
-          ctx,
-          currentTool,
-          currentColor,
-          currentSize,
-          pts[lastIdx].pressure ?? 0.5
-        );
-        ctx.beginPath();
-        ctx.moveTo(prevMid.x, prevMid.y);
-        ctx.lineTo(pts[lastIdx].x, pts[lastIdx].y);
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      let finalStroke = currentStroke;
-
-      // ONLY convert to shape if predictiveShapes is explicitly active AND is a large intentional diagram
-      if (predictiveShapes && currentStroke.tool !== 'eraser') {
-        const detected = detectGeometricShape(currentStroke.points);
-        if (detected && detected.type) {
-          const cleanPoints = generateCleanShapePoints(currentStroke.points, detected.type);
-          finalStroke = {
-            ...currentStroke,
-            points: cleanPoints,
-          };
-        }
-      }
-
-      const newStrokes = [...strokes, finalStroke];
-      onStrokesChange(newStrokes);
-
-      const newHistory = history.slice(0, historyIndex + 1);
-      newHistory.push(newStrokes);
-      setHistory(newHistory);
-      setHistoryIndex(newHistory.length - 1);
-
-      // Reconcile canvas once stroke is committed
-      redraw();
-
-      if (autoRecognize) {
-        autoRecognizeTimerRef.current = setTimeout(() => {
-          triggerHandwritingRecognition(newStrokes);
-        }, 2200);
-      }
-    }
-
-    activeStrokeRef.current = null;
-    setActiveStroke(null);
+  const handlePointerUp = (e?: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!isDrawingRef.current) return;
+    if (e && activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return;
+    commitCurrentStroke();
   };
 
   const handlePointerCancel = () => {
-    setIsDrawing(false);
-    activeStrokeRef.current = null;
-    setActiveStroke(null);
-    redraw();
+    // If Android or browser emits cancel, commit whatever was drawn so nothing is erased!
+    commitCurrentStroke();
   };
+
+  // Prevent tablet gesture scrolling on canvas and guarantee global pointer cleanup
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const preventTouchDefault = (e: TouchEvent) => {
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+    };
+
+    canvas.addEventListener('touchstart', preventTouchDefault, { passive: false });
+    canvas.addEventListener('touchmove', preventTouchDefault, { passive: false });
+
+    const handleGlobalPointerUp = (e: PointerEvent) => {
+      if (isDrawingRef.current && activePointerIdRef.current !== null && e.pointerId === activePointerIdRef.current) {
+        commitCurrentStroke();
+      }
+    };
+
+    const handleGlobalPointerCancel = (e: PointerEvent) => {
+      if (isDrawingRef.current && activePointerIdRef.current !== null && e.pointerId === activePointerIdRef.current) {
+        commitCurrentStroke();
+      }
+    };
+
+    window.addEventListener('pointerup', handleGlobalPointerUp);
+    window.addEventListener('pointercancel', handleGlobalPointerCancel);
+
+    return () => {
+      canvas.removeEventListener('touchstart', preventTouchDefault);
+      canvas.removeEventListener('touchmove', preventTouchDefault);
+      window.removeEventListener('pointerup', handleGlobalPointerUp);
+      window.removeEventListener('pointercancel', handleGlobalPointerCancel);
+    };
+  }, [commitCurrentStroke]);
 
   // Undo / Redo
   const handleUndo = () => {
@@ -834,7 +946,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     onInsertTextIntoNote(updated);
   };
 
-  const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+  const dpr = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
   const totalPages = Math.max(1, pages.length);
 
   const renderDockButton = (isVertical = false, side: 'left' | 'right' = 'left') => (
@@ -1142,45 +1254,42 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         )}
       </div>
 
-      {/* Predictive Features Toggles */}
+      {/* Tablet Stylus & Palm Rejection Controls */}
       <div className="flex items-center gap-1 border-l border-slate-200 dark:border-slate-800 pl-1 shrink-0">
-        <button
-          type="button"
-          onClick={() => setPredictiveShapes(!predictiveShapes)}
-          className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
-            predictiveShapes
-              ? 'bg-purple-600 text-white shadow-sm ring-2 ring-purple-300'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
-          }`}
-          title={
-            predictiveShapes
-              ? 'Figuras ACTIVADAS: Convierte círculos y rectángulos grandes en diagramas'
-              : 'Escritura Libre (Figuras DESACTIVADAS): Tu letra nunca se transformará en formas'
-          }
-          aria-label="Figuras automáticas"
-        >
-          <Shapes className="w-4 h-4" />
-          <span className="hidden sm:inline">{predictiveShapes ? 'Figuras: ON' : 'Figuras: OFF'}</span>
-        </button>
+        {isStylusDetected && (
+          <span
+            className="px-2 py-1 rounded-lg text-xs font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 flex items-center gap-1 border border-blue-200/60 dark:border-blue-800/60"
+            title="Lápiz stylus detectado y calibrado"
+          >
+            <Pen className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Stylus Activo</span>
+          </span>
+        )}
 
-        {/* Palm Rejection Mode */}
         <button
           type="button"
-          onClick={() => setPalmRejection(!palmRejection)}
+          onClick={() => {
+            const next = !stylusOnlyMode;
+            setStylusOnlyMode(next);
+            if (next) setPalmRejection(true);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('notascribe_stylus_only', String(next));
+            }
+          }}
           className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
-            palmRejection
-              ? 'bg-emerald-600 text-white shadow-sm'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+            stylusOnlyMode
+              ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-300'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
           }`}
           title={
-            palmRejection
-              ? 'Rechazo de Palma ACTIVADO: Dibuja solo con el lápiz stylus y puedes apoyar la mano en la pantalla'
-              : 'Rechazo de Palma DESACTIVADO'
+            stylusOnlyMode
+              ? 'Modo Solo Stylus ACTIVO: Solo dibuja el lápiz stylus. Puedes apoyar toda la mano en la pantalla sin problemas.'
+              : 'Modo Lápiz + Dedo: Dibuja tanto con el lápiz como con los dedos.'
           }
-          aria-label="Rechazo de palma"
+          aria-label="Modo de lápiz"
         >
           <ShieldCheck className="w-4 h-4" />
-          <span className="hidden sm:inline">{palmRejection ? 'Solo Stylus' : 'Lápiz + Mano'}</span>
+          <span className="hidden sm:inline">{stylusOnlyMode ? 'Solo Stylus (Mano apoyada)' : 'Lápiz + Dedo'}</span>
         </button>
       </div>
 
@@ -1446,42 +1555,30 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           )}
         </div>
 
-        {/* Predictive Shapes */}
+        {/* Stylus & Palm Rejection Mode */}
         <button
           type="button"
-          onClick={() => setPredictiveShapes(!predictiveShapes)}
-          className={`p-2 rounded-xl text-xs font-medium flex items-center justify-center transition-all ${
-            predictiveShapes
-              ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
-              : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-          title={
-            predictiveShapes
-              ? 'Formas automáticas activadas'
-              : 'Formas automáticas desactivadas'
-          }
-          aria-label="Formas predictivas"
-        >
-          <Shapes className="w-4 h-4" />
-        </button>
-
-        {/* Palm Rejection Mode */}
-        <button
-          type="button"
-          onClick={() => setPalmRejection(!palmRejection)}
+          onClick={() => {
+            const next = !stylusOnlyMode;
+            setStylusOnlyMode(next);
+            if (next) setPalmRejection(true);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('notascribe_stylus_only', String(next));
+            }
+          }}
           className={`p-2 rounded-xl text-xs font-semibold flex items-center justify-center transition-all ${
-            palmRejection
-              ? 'bg-emerald-600 text-white shadow-sm'
+            stylusOnlyMode
+              ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-300'
               : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
           }`}
           title={
-            palmRejection
-              ? 'Solo Stylus: toques con la mano ignorados'
-              : 'Rechazo de Palma desactivado'
+            stylusOnlyMode
+              ? 'Solo Stylus ACTIVO: Solo dibuja el lápiz stylus. Puedes apoyar la mano en la pantalla.'
+              : 'Modo Lápiz + Dedo'
           }
-          aria-label="Rechazo de palma"
+          aria-label="Modo Stylus"
         >
-          {palmRejection ? <ShieldCheck className="w-4 h-4 text-white" /> : <ShieldAlert className="w-4 h-4" />}
+          <ShieldCheck className={`w-4 h-4 ${stylusOnlyMode ? 'text-white' : ''}`} />
         </button>
       </div>
 
@@ -1630,8 +1727,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           </div>
         )}
 
-        {/* Canvas Drawing Area */}
-        <div className="flex-1 w-full h-full overflow-auto relative">
+        {/* Canvas Drawing Area with full gesture isolation */}
+        <div className="flex-1 w-full h-full overflow-auto relative touch-none select-none">
         <canvas
           ref={canvasRef}
           width={dimensions.width * dpr}
@@ -1645,8 +1742,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerCancel}
-          onPointerLeave={handlePointerCancel}
-          className="block mx-auto cursor-crosshair shadow-md"
+          onLostPointerCapture={handlePointerUp}
+          className="block mx-auto cursor-crosshair shadow-md touch-none"
         />
 
         {/* Palm Rest Shield overlay for comfortable hand resting */}
