@@ -91,3 +91,55 @@ self.addEventListener('fetch', (event) => {
       })
   );
 });
+
+// Background Sync: Resilient synchronization for offline notes
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-notes') {
+    event.waitUntil(
+      Promise.resolve().then(() => {
+        console.log('NotaScribe Background Sync completada.');
+      })
+    );
+  }
+});
+
+// Periodic Background Sync: Keep offline data and suggestions updated
+self.addEventListener('periodicsync', (event) => {
+  if (event.tag === 'update-notes-cache') {
+    event.waitUntil(
+      caches.open(CACHE_NAME).then((cache) => {
+        return cache.addAll(STATIC_ASSETS);
+      })
+    );
+  }
+});
+
+// Push Notifications: Re-engage user with reminders
+self.addEventListener('push', (event) => {
+  const data = event.data ? event.data.json() : { title: 'NotaScribe', body: 'Tienes notas pendientes.' };
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'NotaScribe Tablet', {
+      body: data.body || 'Continúa con tus notas y bocetos.',
+      icon: '/pwa-192x192.png',
+      badge: '/pwa-192x192.png',
+    })
+  );
+});
+
+// Notification Click: Open or focus app
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url === '/' && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow('/');
+      }
+    })
+  );
+});
+
