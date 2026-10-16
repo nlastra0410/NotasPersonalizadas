@@ -47,6 +47,11 @@ app.get('/manifest.json', (req, res) => {
   res.sendFile(path.resolve(__dirname, 'public', 'manifest.json'));
 });
 
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.sendFile(path.resolve(__dirname, 'public', '.well-known', 'assetlinks.json'));
+});
+
 app.get('/icon-transparent', (req, res) => {
   res.sendFile(path.resolve(__dirname, 'public', 'render-transparent.html'));
 });
