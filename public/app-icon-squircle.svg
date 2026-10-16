@@ -1,0 +1,199 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Background Gradients -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="50%" stop-color="#1e1b4b" />
+      <stop offset="100%" stop-color="#090d16" />
+    </linearGradient>
+
+    <linearGradient id="squircleBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#818cf8" stop-opacity="0.7" />
+      <stop offset="50%" stop-color="#c084fc" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.6" />
+    </linearGradient>
+
+    <!-- Ink Ribbon Gradient -->
+    <linearGradient id="inkGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#06b6d4" />
+      <stop offset="35%" stop-color="#3b82f6" />
+      <stop offset="70%" stop-color="#8b5cf6" />
+      <stop offset="100%" stop-color="#ec4899" />
+    </linearGradient>
+
+    <linearGradient id="inkGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#c084fc" stop-opacity="0.8" />
+    </linearGradient>
+
+    <!-- Stylus Gold / Metallic Gradients -->
+    <linearGradient id="nibGold" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a" />
+      <stop offset="30%" stop-color="#f59e0b" />
+      <stop offset="60%" stop-color="#d97706" />
+      <stop offset="85%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#b45309" />
+    </linearGradient>
+
+    <linearGradient id="nibHighlight" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.6" />
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="0" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.2" />
+    </linearGradient>
+
+    <linearGradient id="bodyMetallic" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#334155" />
+      <stop offset="40%" stop-color="#1e293b" />
+      <stop offset="70%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+
+    <linearGradient id="pageGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.14" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.04" />
+    </linearGradient>
+
+    <!-- Filters for Depth and Glow -->
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="32" flood-color="#000000" flood-opacity="0.45" />
+    </filter>
+
+    <filter id="glowEffect" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="nibShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="-8" dy="16" stdDeviation="20" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <!-- App Icon Base Squircle (iOS / Android Adaptive Format) -->
+  <rect x="32" y="32" width="960" height="960" rx="224" fill="url(#bgGrad)" stroke="url(#squircleBorder)" stroke-width="6" />
+
+  <!-- Background Ambient Lights Inside App Icon -->
+  <circle cx="560" cy="520" r="300" fill="url(#inkGlow)" opacity="0.3" filter="url(#glowEffect)" />
+  <circle cx="360" cy="640" r="240" fill="#06b6d4" opacity="0.25" filter="url(#glowEffect)" />
+
+  <!-- Stylized Digital Notebook Page (Glass Sheet) -->
+  <g transform="matrix(0.96, -0.08, 0.08, 0.96, 40, 45)" filter="url(#softShadow)">
+    <rect x="220" y="240" width="560" height="600" rx="40" fill="url(#pageGrad)" stroke="rgba(255,255,255,0.22)" stroke-width="3" />
+    
+    <!-- Notebook Paper Ruled Lines -->
+    <line x1="280" y1="370" x2="720" y2="370" stroke="rgba(255,255,255,0.1)" stroke-width="4" stroke-linecap="round" />
+    <line x1="280" y1="460" x2="720" y2="460" stroke="rgba(255,255,255,0.1)" stroke-width="4" stroke-linecap="round" />
+    <line x1="280" y1="550" x2="720" y2="550" stroke="rgba(255,255,255,0.1)" stroke-width="4" stroke-linecap="round" />
+    <line x1="280" y1="640" x2="720" y2="640" stroke="rgba(255,255,255,0.1)" stroke-width="4" stroke-linecap="round" />
+    <line x1="280" y1="730" x2="720" y2="730" stroke="rgba(255,255,255,0.1)" stroke-width="4" stroke-linecap="round" />
+
+    <!-- Left Notebook Margin Line in Cyan -->
+    <line x1="345" y1="290" x2="345" y2="780" stroke="#06b6d4" stroke-opacity="0.4" stroke-width="3" stroke-dasharray="10 8" />
+  </g>
+
+  <!-- Dynamic Calligraphic Ink Ribbon / Swirl -->
+  <g filter="url(#glowEffect)">
+    <!-- Back Glow Ribbon -->
+    <path d="M 230 760 C 330 830, 470 810, 560 710 C 650 610, 640 450, 520 400 C 420 360, 320 440, 350 550 C 380 640, 520 660, 600 590"
+          fill="none"
+          stroke="url(#inkGrad)"
+          stroke-width="50"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          opacity="0.45"
+          filter="url(#glowEffect)" />
+
+    <!-- Vibrant Core Ribbon -->
+    <path d="M 230 760 C 330 830, 470 810, 560 710 C 650 610, 640 450, 520 400 C 420 360, 320 440, 350 550 C 380 640, 520 660, 600 590"
+          fill="none"
+          stroke="url(#inkGrad)"
+          stroke-width="32"
+          stroke-linecap="round"
+          stroke-linejoin="round" />
+
+    <!-- Inner Highlight Stroke for 3D Tubular Sheen -->
+    <path d="M 230 760 C 330 830, 470 810, 560 710 C 650 610, 640 450, 520 400 C 420 360, 320 440, 350 550 C 380 640, 520 660, 600 590"
+          fill="none"
+          stroke="#ffffff"
+          stroke-opacity="0.45"
+          stroke-width="10"
+          stroke-linecap="round"
+          stroke-linejoin="round" />
+  </g>
+
+  <!-- Connected Idea Nodes / Concept Map Constellation on the ink trail -->
+  <g>
+    <!-- Connecting Edges -->
+    <line x1="280" y1="770" x2="360" y2="680" stroke="rgba(255,255,255,0.45)" stroke-width="3" stroke-dasharray="6 6" />
+    <line x1="560" y1="710" x2="680" y2="760" stroke="rgba(255,255,255,0.45)" stroke-width="3" stroke-dasharray="6 6" />
+
+    <!-- Small Nodes -->
+    <circle cx="360" cy="680" r="14" fill="#06b6d4" stroke="#ffffff" stroke-width="4" filter="url(#glowEffect)" />
+    <circle cx="680" cy="760" r="16" fill="#8b5cf6" stroke="#ffffff" stroke-width="4" filter="url(#glowEffect)" />
+    <circle cx="490" cy="385" r="12" fill="#ec4899" stroke="#ffffff" stroke-width="4" filter="url(#glowEffect)" />
+  </g>
+
+  <!-- Golden Master Fountain Pen Nib & Stylus Body -->
+  <g transform="translate(600, 590) rotate(42)" filter="url(#nibShadow)">
+    <!-- Upper Stylus Pen Body Sleeve -->
+    <path d="M -50 -320 L 50 -320 L 44 -130 L -44 -130 Z" fill="url(#bodyMetallic)" stroke="rgba(255,255,255,0.25)" stroke-width="2" />
+    
+    <!-- Stylus Chrome Grip Accent Rings -->
+    <rect x="-46" y="-140" width="92" height="12" rx="4" fill="url(#nibGold)" />
+    <rect x="-42" y="-120" width="84" height="8" rx="3" fill="#cbd5e1" opacity="0.8" />
+
+    <!-- Master Golden Fountain Pen Nib Flange -->
+    <path d="M -44 -110
+             C -44 -60, -38 -25, 0 0
+             C 38 -25, 44 -60, 44 -110
+             Z"
+          fill="url(#nibGold)"
+          stroke="#92400e"
+          stroke-width="3" />
+
+    <!-- Nib 3D Specular Highlight (Left Side) -->
+    <path d="M -42 -108
+             C -42 -60, -36 -25, 0 0
+             L -4 -1
+             C -28 -30, -34 -65, -34 -108
+             Z"
+          fill="url(#nibHighlight)" />
+
+    <!-- Engraved Filigree Heart / Scroll on Nib -->
+    <path d="M -18 -68 C -18 -82, 0 -82, 0 -68 C 0 -82, 18 -82, 18 -68 C 18 -52, 0 -38, 0 -38 C 0 -38, -18 -52, -18 -68 Z"
+          fill="none"
+          stroke="#78350f"
+          stroke-width="3"
+          stroke-linecap="round" />
+
+    <!-- Nib Breather Hole -->
+    <circle cx="0" cy="-48" r="7" fill="#1e1b4b" stroke="#78350f" stroke-width="2.5" />
+
+    <!-- Nib Slit from Breather Hole to Tip -->
+    <line x1="0" y1="-41" x2="0" y2="0" stroke="#1e1b4b" stroke-width="3.5" stroke-linecap="round" />
+
+    <!-- Right Edge Shadow for depth -->
+    <path d="M 0 0 C 38 -25, 44 -60, 44 -110 L 38 -110 C 38 -65, 32 -30, 0 0 Z" fill="#000000" opacity="0.25" />
+  </g>
+
+  <!-- Touchpoint Sparkle & AI Nova Spark at the Pen Tip -->
+  <g transform="translate(600, 590)">
+    <!-- Intense Light Burst -->
+    <circle cx="0" cy="0" r="28" fill="#ffffff" filter="url(#glowEffect)" opacity="0.95" />
+    <circle cx="0" cy="0" r="14" fill="#fef08a" />
+
+    <!-- 4-Point AI Sparkle Star -->
+    <path d="M 0 -55 Q 0 0, 55 0 Q 0 0, 0 55 Q 0 0, -55 0 Q 0 0, 0 -55 Z"
+          fill="#ffffff"
+          filter="url(#glowEffect)" />
+    <path d="M 0 -38 Q 0 0, 38 0 Q 0 0, 0 38 Q 0 0, -38 0 Q 0 0, 0 -38 Z"
+          fill="#fef08a" />
+
+    <!-- Small Secondary Sparkles -->
+    <g transform="translate(68, -48) scale(0.48)">
+      <path d="M 0 -40 Q 0 0, 40 0 Q 0 0, 0 40 Q 0 0, -40 0 Q 0 0, 0 -40 Z" fill="#38bdf8" filter="url(#glowEffect)" />
+    </g>
+    <g transform="translate(-56, 42) scale(0.38)">
+      <path d="M 0 -40 Q 0 0, 40 0 Q 0 0, 0 40 Q 0 0, -40 0 Q 0 0, 0 -40 Z" fill="#ec4899" filter="url(#glowEffect)" />
+    </g>
+  </g>
+</svg>

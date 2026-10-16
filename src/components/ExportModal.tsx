@@ -189,6 +189,56 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               {copiedText ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-slate-400" />}
             </button>
           )}
+
+          {/* App Icon Section for Android & PWABuilder (1024x1024) */}
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                Icono de la App (1024 × 1024 px)
+              </span>
+              <span className="text-[10px] bg-indigo-50 text-indigo-700 font-semibold px-2 py-0.5 rounded-full border border-indigo-200">
+                Para Android / APK
+              </span>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3">
+              <div className="w-14 h-14 rounded-xl shadow-md border border-slate-200 overflow-hidden shrink-0 bg-slate-900 flex items-center justify-center">
+                <img
+                  src="/app-icon-1024.png"
+                  alt="Icono NotaScribe 1024x1024"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-semibold text-slate-800">Icono Oficial NotaScribe</p>
+                <p className="text-[10px] text-slate-500">Listo para PWABuilder, WebToApp y Google Play Store</p>
+                
+                <div className="flex items-center gap-1.5 mt-2">
+                  <a
+                    href="/app-icon-1024-transparent.png"
+                    download="app-icon-1024-transparent.png"
+                    className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded text-[10px] font-semibold flex items-center gap-1 shadow-sm transition-colors"
+                    title="PNG 1024x1024 sin fondo (transparente)"
+                  >
+                    <Download className="w-3 h-3 text-indigo-600" />
+                    Transparente (PNG)
+                  </a>
+
+                  <a
+                    href="/app-icon-1024.png"
+                    download="app-icon-1024.png"
+                    className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[10px] font-semibold flex items-center gap-1 shadow-sm transition-colors"
+                    title="PNG 1024x1024 con fondo adaptativo redondeado"
+                  >
+                    <Download className="w-3 h-3 text-white" />
+                    Con Fondo (PNG)
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Footer */}

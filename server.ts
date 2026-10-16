@@ -15,6 +15,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 // High limit for canvas handwriting images and base64 audio
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.static(path.resolve(__dirname, 'public')));
 
 // Server-side Google GenAI initialization
 const ai = new GoogleGenAI({
@@ -33,6 +34,22 @@ app.get('/api/health', (req, res) => {
     hasApiKey: Boolean(process.env.GEMINI_API_KEY),
     timestamp: Date.now(),
   });
+});
+
+app.get('/icon-transparent', (req, res) => {
+  res.sendFile(path.resolve(__dirname, 'public', 'render-transparent.html'));
+});
+
+app.get('/icon-solid', (req, res) => {
+  res.sendFile(path.resolve(__dirname, 'public', 'render-solid.html'));
+});
+
+app.get('/app-icon-emblem.svg', (req, res) => {
+  res.sendFile(path.resolve(__dirname, 'public', 'app-icon-emblem.svg'));
+});
+
+app.get('/app-icon-squircle.svg', (req, res) => {
+  res.sendFile(path.resolve(__dirname, 'public', 'app-icon-squircle.svg'));
 });
 
 /**

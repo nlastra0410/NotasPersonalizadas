@@ -1,0 +1,36 @@
+{
+  "short_name": "NotaScribe",
+  "name": "NotaScribe Tablet - Notas, Stylus y Reconocimiento",
+  "description": "App de notas avanzada para tablets con escritura fluida con lápiz stylus, reconocimiento manuscrito y mapas conceptuales.",
+  "icons": [
+    {
+      "src": "/app-icon-1024.png",
+      "type": "image/png",
+      "sizes": "1024x1024",
+      "purpose": "any"
+    },
+    {
+      "src": "/app-icon-1024.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/app-icon-1024-transparent.png",
+      "type": "image/png",
+      "sizes": "1024x1024",
+      "purpose": "any"
+    },
+    {
+      "src": "/app-icon-squircle.svg",
+      "type": "image/svg+xml",
+      "sizes": "1024x1024"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "display": "standalone",
+  "orientation": "any",
+  "categories": ["productivity", "education", "utilities"]
+}
