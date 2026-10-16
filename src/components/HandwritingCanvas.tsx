@@ -83,7 +83,7 @@ const COLOR_PRESETS = [
   '#facc15', // Highlighter bright yellow
 ];
 
-const STROKE_SIZES = [2, 4, 8, 14, 24];
+const STROKE_SIZES = [1.5, 2.5, 4, 7, 12];
 
 export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   strokes,
@@ -107,21 +107,24 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   // Drawing state
   const [currentTool, setCurrentTool] = useState<PenTool>('pen');
   const [currentColor, setCurrentColor] = useState<string>('#0f172a');
-  const [currentSize, setCurrentSize] = useState<number>(4);
+  const [currentSize, setCurrentSize] = useState<number>(2.5); // Calibrado para escritura natural con stylus
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [activeStroke, setActiveStroke] = useState<Stroke | null>(null);
+  const activeStrokeRef = useRef<Stroke | null>(null);
+  const lastPressureRef = useRef<number>(0.5);
 
   // Laser Pointer state (fading neon trail for presentations)
   const laserPointsRef = useRef<Array<{ x: number; y: number; time: number }>>([]);
   const laserAnimRef = useRef<number | null>(null);
 
   // Tablet-specific modes & predictive features
-  const [palmRejection, setPalmRejection] = useState<boolean>(false);
+  const [palmRejection, setPalmRejection] = useState<boolean>(true); // Activo por defecto para evitar toques accidentales de la mano
   const [showPalmShield, setShowPalmShield] = useState<boolean>(false);
   const [isZenMode, setIsZenMode] = useState<boolean>(false);
-  const [predictiveShapes, setPredictiveShapes] = useState<boolean>(true);
-  const [predictiveStylus, setPredictiveStylus] = useState<boolean>(true);
+  const [predictiveShapes, setPredictiveShapes] = useState<boolean>(false); // DESACTIVADO por defecto para que NUNCA transforme la escritura en figuras
+  const [predictiveStylus, setPredictiveStylus] = useState<boolean>(false); // Trazo 1:1 real con el lápiz
   const [showPaperHelp, setShowPaperHelp] = useState<boolean>(false);
+  const [showWordSuggestions, setShowWordSuggestions] = useState<boolean>(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [toolbarPosition, setToolbarPosition] = useState<ToolbarPosition>(() => {
     if (typeof window !== 'undefined') {
@@ -494,22 +497,53 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     laserAnimRef.current = requestAnimationFrame(step);
   }, [redraw]);
 
-  // Pointer event handlers with Palm Rejection and Stylus prediction
+  // Helper to configure stroke context styling
+  const applyStrokeStyle = (
+    ctx: CanvasRenderingContext2D,
+    tool: PenTool,
+    color: string,
+    size: number,
+    pressure: number
+  ) => {
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    if (tool === 'highlighter') {
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.35;
+      ctx.lineWidth = size * 2.5;
+    } else if (tool === 'eraser') {
+      ctx.strokeStyle = paperStyle === 'dark_board' ? '#0f172a' : '#ffffff';
+      ctx.globalAlpha = 1.0;
+      ctx.lineWidth = size * 3.0;
+    } else {
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 1.0;
+      ctx.lineWidth = getDynamicStrokeWidth(size, tool, pressure);
+    }
+  };
+
+  // High-performance pointer handlers with Coalesced Stylus Events & Zero-Lag Drawing
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    // Palm Rejection: If active, strictly reject non-pen pointers (e.g. hand or finger touch)
-    if (palmRejection && e.pointerType !== 'pen') {
+    // Palm Rejection: If active and a pen is present, ignore accidental palm or touch gestures
+    if (palmRejection && e.pointerType === 'touch') {
       return;
     }
 
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    canvas.setPointerCapture(e.pointerId);
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore if pointer capture fails
+    }
 
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const pressure = e.pressure > 0 ? e.pressure : 0.5;
+    const rawPressure = e.pressure > 0 ? e.pressure : 0.5;
+    lastPressureRef.current = rawPressure;
 
     if (currentTool === 'laser') {
       laserPointsRef.current.push({ x, y, time: Date.now() });
@@ -523,13 +557,28 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       tool: currentTool,
       color: currentColor,
       size: currentSize,
-      opacity: currentTool === 'highlighter' ? 0.4 : 1.0,
+      opacity: currentTool === 'highlighter' ? 0.35 : 1.0,
       timestamp: Date.now(),
-      points: [{ x, y, pressure, time: Date.now() }],
+      points: [{ x, y, pressure: rawPressure, time: Date.now() }],
     };
 
+    activeStrokeRef.current = newStroke;
     setIsDrawing(true);
-    setActiveStroke(newStroke);
+
+    // Draw initial dot immediately onto canvas
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      const dpr = window.devicePixelRatio || 1;
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      applyStrokeStyle(ctx, currentTool, currentColor, currentSize, rawPressure);
+      ctx.beginPath();
+      const dotRadius = Math.max(1, (ctx.lineWidth || currentSize) / 2);
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
 
     if (autoRecognizeTimerRef.current) {
       clearTimeout(autoRecognizeTimerRef.current);
@@ -537,40 +586,70 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    if (palmRejection && e.pointerType !== 'pen') return;
+    if (!isDrawing || !activeStrokeRef.current) return;
+    if (palmRejection && e.pointerType === 'touch') return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const pressure = e.pressure > 0 ? e.pressure : 0.5;
 
     if (currentTool === 'laser') {
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
       laserPointsRef.current.push({ x, y, time: Date.now() });
       scheduleLaserFade();
       return;
     }
 
-    if (!activeStroke) return;
+    // Capture coalesced events emitted by Lenovo Tab Pen / S-Pen for 120-240Hz fidelity
+    const nativeEvt = e.nativeEvent as any;
+    const coalescedList: Array<{ clientX: number; clientY: number; pressure?: number }> =
+      nativeEvt && typeof nativeEvt.getCoalescedEvents === 'function' && nativeEvt.getCoalescedEvents().length > 0
+        ? nativeEvt.getCoalescedEvents()
+        : [e];
 
-    const newPoint: Point = { x, y, pressure, time: Date.now() };
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
 
-    setActiveStroke((prev) => {
-      if (!prev) return null;
-      const pts = [...prev.points, newPoint];
+    for (const item of coalescedList) {
+      const x = item.clientX - rect.left;
+      const y = item.clientY - rect.top;
+      const rawPressure = typeof item.pressure === 'number' && item.pressure > 0 ? item.pressure : 0.5;
 
-      if (predictiveStylus && pts.length >= 3) {
-        const predicted = predictNextPoint(pts, 4);
-        if (predicted) {
-          return { ...prev, points: pts };
+      // Smooth pressure curve to prevent sudden blobs
+      const smoothedPressure = lastPressureRef.current * 0.6 + rawPressure * 0.4;
+      lastPressureRef.current = smoothedPressure;
+
+      const newPoint: Point = { x, y, pressure: smoothedPressure, time: Date.now() };
+      const pts = activeStrokeRef.current.points;
+      pts.push(newPoint);
+
+      // Draw direct incremental Bézier segment on canvas (Zero latency, no React re-render lag)
+      if (ctx && pts.length >= 2) {
+        ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        applyStrokeStyle(ctx, currentTool, currentColor, currentSize, smoothedPressure);
+
+        const len = pts.length;
+        if (len === 2) {
+          const mid = getMidPoint(pts[0], pts[1]);
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x, pts[0].y);
+          ctx.lineTo(mid.x, mid.y);
+          ctx.stroke();
+        } else {
+          const prevMid = getMidPoint(pts[len - 3], pts[len - 2]);
+          const mid = getMidPoint(pts[len - 2], pts[len - 1]);
+          ctx.beginPath();
+          ctx.moveTo(prevMid.x, prevMid.y);
+          ctx.quadraticCurveTo(pts[len - 2].x, pts[len - 2].y, mid.x, mid.y);
+          ctx.stroke();
         }
-      }
 
-      return { ...prev, points: pts };
-    });
+        ctx.restore();
+      }
+    }
   };
 
   const handlePointerUp = () => {
@@ -582,15 +661,42 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       return;
     }
 
-    if (activeStroke && activeStroke.points.length > 0) {
-      let finalStroke = activeStroke;
+    const currentStroke = activeStrokeRef.current;
+    if (currentStroke && currentStroke.points.length > 0) {
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const pts = currentStroke.points;
 
-      if (predictiveShapes && activeStroke.tool !== 'eraser') {
-        const detected = detectGeometricShape(activeStroke.points);
+      // Close remaining segment to last point
+      if (ctx && pts.length > 2) {
+        const lastIdx = pts.length - 1;
+        const prevMid = getMidPoint(pts[lastIdx - 1], pts[lastIdx]);
+        ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        applyStrokeStyle(
+          ctx,
+          currentTool,
+          currentColor,
+          currentSize,
+          pts[lastIdx].pressure ?? 0.5
+        );
+        ctx.beginPath();
+        ctx.moveTo(prevMid.x, prevMid.y);
+        ctx.lineTo(pts[lastIdx].x, pts[lastIdx].y);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      let finalStroke = currentStroke;
+
+      // ONLY convert to shape if predictiveShapes is explicitly active AND is a large intentional diagram
+      if (predictiveShapes && currentStroke.tool !== 'eraser') {
+        const detected = detectGeometricShape(currentStroke.points);
         if (detected && detected.type) {
-          const cleanPoints = generateCleanShapePoints(activeStroke.points, detected.type);
+          const cleanPoints = generateCleanShapePoints(currentStroke.points, detected.type);
           finalStroke = {
-            ...activeStroke,
+            ...currentStroke,
             points: cleanPoints,
           };
         }
@@ -604,19 +710,25 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       setHistory(newHistory);
       setHistoryIndex(newHistory.length - 1);
 
+      // Reconcile canvas once stroke is committed
+      redraw();
+
       if (autoRecognize) {
         autoRecognizeTimerRef.current = setTimeout(() => {
           triggerHandwritingRecognition(newStrokes);
-        }, 1800);
+        }, 2200);
       }
     }
 
+    activeStrokeRef.current = null;
     setActiveStroke(null);
   };
 
   const handlePointerCancel = () => {
     setIsDrawing(false);
+    activeStrokeRef.current = null;
     setActiveStroke(null);
+    redraw();
   };
 
   // Undo / Redo
@@ -1035,40 +1147,40 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         <button
           type="button"
           onClick={() => setPredictiveShapes(!predictiveShapes)}
-          className={`p-2 rounded-xl text-xs font-medium flex items-center gap-1 transition-all ${
+          className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
             predictiveShapes
-              ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
-              : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+              ? 'bg-purple-600 text-white shadow-sm ring-2 ring-purple-300'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
           }`}
           title={
             predictiveShapes
-              ? 'Predicción de formas ACTIVADA (Líneas y círculos a mano se perfeccionan automáticamente)'
-              : 'Predicción de formas DESACTIVADA'
+              ? 'Figuras ACTIVADAS: Convierte círculos y rectángulos grandes en diagramas'
+              : 'Escritura Libre (Figuras DESACTIVADAS): Tu letra nunca se transformará en formas'
           }
-          aria-label="Formas predictivas"
+          aria-label="Figuras automáticas"
         >
           <Shapes className="w-4 h-4" />
-          <span className="hidden xl:inline">Formas</span>
+          <span className="hidden sm:inline">{predictiveShapes ? 'Figuras: ON' : 'Figuras: OFF'}</span>
         </button>
 
         {/* Palm Rejection Mode */}
         <button
           type="button"
           onClick={() => setPalmRejection(!palmRejection)}
-          className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+          className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
             palmRejection
               ? 'bg-emerald-600 text-white shadow-sm'
               : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
           }`}
           title={
             palmRejection
-              ? 'Rechazo de Palma ACTIVADO: Solo dibuja el stylus, se ignoran toques de mano'
-              : 'Rechazo de Palma DESACTIVADO: Acepta lápiz y dedos'
+              ? 'Rechazo de Palma ACTIVADO: Dibuja solo con el lápiz stylus y puedes apoyar la mano en la pantalla'
+              : 'Rechazo de Palma DESACTIVADO'
           }
           aria-label="Rechazo de palma"
         >
-          {palmRejection ? <ShieldCheck className="w-4 h-4 text-white" /> : <ShieldAlert className="w-4 h-4" />}
-          <span className="hidden md:inline">{palmRejection ? 'Solo Stylus' : 'Rechazo Palma'}</span>
+          <ShieldCheck className="w-4 h-4" />
+          <span className="hidden sm:inline">{palmRejection ? 'Solo Stylus' : 'Lápiz + Mano'}</span>
         </button>
       </div>
 
@@ -1460,8 +1572,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
 
       {/* Main Canvas + Content Container */}
       <div className="flex-1 w-full h-full flex flex-col overflow-hidden relative">
-        {/* Suggestions Bar in Top or Vertical mode (Placed neatly above canvas, not covering paper) */}
-        {toolbarPosition !== 'floating' && predictiveWords.length > 0 && (
+        {/* Suggestions Bar (Hidden by default to give 100% clean paper area) */}
+        {showWordSuggestions && toolbarPosition !== 'floating' && predictiveWords.length > 0 && (
           <div className="w-full bg-slate-50/95 dark:bg-slate-900/90 border-b border-slate-200/60 dark:border-slate-800/60 px-3 py-1 flex items-center gap-1.5 shrink-0 z-20 overflow-x-auto [scrollbar-width:none]">
             <span className="text-[10px] font-semibold text-slate-400 shrink-0 flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-purple-500" />
@@ -1478,11 +1590,19 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 {word}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => setShowWordSuggestions(false)}
+              className="ml-auto p-1 text-slate-400 hover:text-slate-600 text-xs font-bold"
+              title="Cerrar sugerencias"
+            >
+              ✕
+            </button>
           </div>
         )}
 
         {/* Floating suggestions bar if toolbar is floating */}
-        {toolbarPosition === 'floating' && predictiveWords.length > 0 && (
+        {showWordSuggestions && toolbarPosition === 'floating' && predictiveWords.length > 0 && (
           <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm rounded-full border border-slate-200/60 dark:border-slate-800/60 shadow-xs max-w-[92vw] overflow-x-auto">
             <span className="text-[10px] font-semibold text-slate-400 shrink-0 flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-purple-500" />
@@ -1499,6 +1619,14 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
                 {word}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => setShowWordSuggestions(false)}
+              className="ml-2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+              title="Cerrar"
+            >
+              ✕
+            </button>
           </div>
         )}
 

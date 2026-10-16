@@ -48,17 +48,19 @@ export function detectGeometricShape(
     pathLength += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
   }
 
-  if (pathLength < 20) return { type: null, confidence: 0 };
+  // Protect handwriting: normal letters (o, e, l, t, a, d) are small and must never become shapes.
+  // Shapes must be intentional, large diagrams.
+  if (pathLength < 80) return { type: null, confidence: 0 };
 
-  // 1. Straight Line Check: pathLength / distStartEnd is very close to 1.0
+  // 1. Straight Line Check: must be an intentional long line
   const straightnessRatio = distStartEnd / pathLength;
-  if (straightnessRatio > 0.94) {
+  if (straightnessRatio > 0.95 && distStartEnd >= 80) {
     return { type: 'line', confidence: straightnessRatio };
   }
 
-  // 2. Closed Loop Check: start and end are close together
-  const isClosed = distStartEnd < pathLength * 0.28;
-  if (isClosed && points.length > 10) {
+  // 2. Closed Loop Check: must be a large circle or rectangle, not an 'o', '0', or 'a'
+  const isClosed = distStartEnd < pathLength * 0.25;
+  if (isClosed && points.length > 10 && pathLength >= 140) {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const p of points) {
       if (p.x < minX) minX = p.x;
@@ -68,8 +70,13 @@ export function detectGeometricShape(
     }
     const width = maxX - minX;
     const height = maxY - minY;
-    const aspectRatio = width / (height || 1);
 
+    // Small loops are handwritten letters, ignore them!
+    if (width < 45 || height < 45) {
+      return { type: null, confidence: 0 };
+    }
+
+    const aspectRatio = width / (height || 1);
     if (aspectRatio >= 0.72 && aspectRatio <= 1.38) {
       return { type: 'circle', confidence: 0.88 };
     } else {
