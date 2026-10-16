@@ -36,6 +36,17 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Service-Worker-Allowed', '/');
+  res.sendFile(path.resolve(__dirname, 'public', 'sw.js'));
+});
+
+app.get('/manifest.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+  res.sendFile(path.resolve(__dirname, 'public', 'manifest.json'));
+});
+
 app.get('/icon-transparent', (req, res) => {
   res.sendFile(path.resolve(__dirname, 'public', 'render-transparent.html'));
 });

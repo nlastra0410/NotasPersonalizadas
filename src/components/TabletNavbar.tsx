@@ -15,6 +15,7 @@ import {
   Search,
   Database,
 } from 'lucide-react';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface TabletNavbarProps {
   activeTab: ActiveTab;
@@ -182,6 +183,9 @@ export const TabletNavbar: React.FC<TabletNavbarProps> = ({
             <span className="hidden lg:inline">{isRightPaneOpen ? 'Solo Lienzo' : 'Ver Ambos'}</span>
           </button>
         )}
+
+        {/* PWA Direct Installation Button */}
+        <PWAInstallButton />
 
         {/* Voice dictation button */}
         <button
