@@ -849,9 +849,11 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       const prevStrokes = history[historyIndex - 1];
       setHistoryIndex(historyIndex - 1);
       onStrokesChange(prevStrokes);
-    } else if (historyIndex === 0) {
+    } else if (historyIndex === 0 && strokes.length > 0) {
       setHistoryIndex(-1);
       onStrokesChange([]);
+    } else if (strokes.length > 0) {
+      onStrokesChange(strokes.slice(0, -1));
     }
   };
 

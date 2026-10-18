@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { NoteItem, PaperStyle, Stroke, NoteViewLayout } from '../types';
+import { NoteItem, PaperStyle, Stroke, NoteViewLayout, ConceptGraph } from '../types';
 import { HandwritingCanvas } from './HandwritingCanvas';
 import { DictationStudio } from './DictationStudio';
+import { SmartDiagramStudio } from './SmartDiagramStudio';
 import {
   Tag as TagIcon,
   Sparkles,
@@ -15,6 +16,8 @@ import {
   ListPlus,
   Network,
   Mic,
+  Wand2,
+  Undo2,
 } from 'lucide-react';
 import {
   getNotePages,
@@ -23,6 +26,7 @@ import {
   addPageToNote,
   deletePageFromNote,
 } from '../utils/multipageNote';
+import { purgeOrphanEdges } from '../utils/conceptMap';
 
 interface NoteEditorViewProps {
   note: NoteItem;
@@ -31,6 +35,7 @@ interface NoteEditorViewProps {
   onToggleRightPane: () => void;
   onConvertToTasks?: (text: string) => void;
   onConvertToConceptMap?: (text: string) => void;
+  onOpenInFullDiagramsTab?: (graph: ConceptGraph) => void;
 }
 
 export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
@@ -40,9 +45,14 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
   onToggleRightPane,
   onConvertToTasks,
   onConvertToConceptMap,
+  onOpenInFullDiagramsTab,
 }) => {
   const [newTagInput, setNewTagInput] = useState<string>('');
   const [viewLayout, setViewLayout] = useState<NoteViewLayout>('canvas');
+
+  // Text undo history for the typed notes editor
+  const [textHistory, setTextHistory] = useState<string[]>([note.content || '']);
+  const [textHistoryIndex, setTextHistoryIndex] = useState<number>(0);
 
   const currentPageIndex = note.activePageIndex ?? 0;
   const pages = getNotePages(note);
@@ -51,6 +61,45 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
   const handleStrokesChange = (newStrokes: Stroke[]) => {
     const updated = updateNotePageStrokes(note, currentPageIndex, newStrokes);
     onUpdateNote(updated);
+  };
+
+  const handleUpdateTextWithHistory = (newContent: string) => {
+    onUpdateNote({ content: newContent, updatedAt: Date.now() });
+    setTextHistory((prev) => {
+      const next = prev.slice(0, textHistoryIndex + 1);
+      next.push(newContent);
+      if (next.length > 25) next.shift();
+      return next;
+    });
+    setTextHistoryIndex((prev) => Math.min(prev + 1, 24));
+  };
+
+  const handleUndoText = () => {
+    if (textHistoryIndex > 0) {
+      const prevContent = textHistory[textHistoryIndex - 1];
+      setTextHistoryIndex(textHistoryIndex - 1);
+      onUpdateNote({ content: prevContent, updatedAt: Date.now() });
+    }
+  };
+
+  // Universal Undo Action across all options:
+  // - In Solo Lienzo / Ver Ambos: removes last stroke
+  // - In Solo Texto: reverts last typed text change
+  // - In Dictado & Voz: dispatches event to DictationStudio
+  // - In Lienzo Predictivo: dispatches event to SmartDiagramStudio
+  const handleGlobalUndo = () => {
+    if (viewLayout === 'smart_diagram') {
+      window.dispatchEvent(new CustomEvent('notascribe:undo_smart_diagram'));
+    } else if (viewLayout === 'dictation') {
+      window.dispatchEvent(new CustomEvent('notascribe:undo_dictation'));
+    } else if (viewLayout === 'text') {
+      handleUndoText();
+    } else {
+      // Solo Lienzo o Ver Ambos: deshacer el último trazo del lápiz
+      if (currentStrokes.length > 0) {
+        handleStrokesChange(currentStrokes.slice(0, -1));
+      }
+    }
   };
 
   const handlePageChange = (idx: number) => {
@@ -74,11 +123,7 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
       ? `${note.content}\n\n${textToInsert}`
       : textToInsert;
 
-    onUpdateNote({
-      content: updatedContent,
-      ocrText: textToInsert,
-      updatedAt: Date.now(),
-    });
+    handleUpdateTextWithHistory(updatedContent);
   };
 
   const handleAddTag = (e: React.FormEvent) => {
@@ -101,14 +146,15 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
   };
 
   const showDictation = viewLayout === 'dictation';
-  const showCanvas = !showDictation && viewLayout !== 'text';
-  const showTextPane = !showDictation && ((isRightPaneOpen && viewLayout !== 'canvas') || viewLayout === 'text');
+  const showSmartDiagram = viewLayout === 'smart_diagram';
+  const showCanvas = !showDictation && !showSmartDiagram && viewLayout !== 'text';
+  const showTextPane = !showDictation && !showSmartDiagram && ((isRightPaneOpen && viewLayout !== 'canvas') || viewLayout === 'text');
 
   const totalStrokes = pages.reduce((acc, p) => acc + p.length, 0);
 
   return (
     <div className="flex-1 w-full h-full flex flex-col overflow-hidden bg-slate-100 dark:bg-slate-950 relative">
-      {/* Sub-header: Quick Layout Controller (Solo Lienzo / Ver Ambos / Solo Texto / Dictado & Voz) */}
+      {/* Sub-header: Quick Layout Controller (Solo Lienzo / Ver Ambos / Solo Texto / Dictado & Voz / Lápiz a Diagrama) */}
       <div className="h-9 px-4 bg-slate-50 dark:bg-slate-900/90 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-xs shrink-0 select-none">
         <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none]">
           <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider hidden sm:inline">
@@ -181,7 +227,35 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
               <Mic className="w-3 h-3 text-rose-500" />
               <span>Dictado & Voz</span>
             </button>
+
+            {/* Nueva Opción: Lienzo Predictivo */}
+            <button
+              type="button"
+              onClick={() => {
+                setViewLayout('smart_diagram');
+              }}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center gap-1 ${
+                viewLayout === 'smart_diagram'
+                  ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs ring-1 ring-indigo-200 dark:ring-indigo-900/60 font-semibold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+              title="Lienzo Predictivo: escribe palabras que se transforman en texto digital, figuras que se convierten en formas perfectas y trazos que unen con flechas"
+            >
+              <Wand2 className="w-3 h-3 text-indigo-500" />
+              <span>Lienzo Predictivo</span>
+            </button>
           </div>
+
+          {/* Flecha de Volver Atrás (Deshacer) Universal para todas las opciones */}
+          <button
+            type="button"
+            onClick={handleGlobalUndo}
+            className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold flex items-center gap-1.5 shadow-2xs hover:shadow-xs transition-all active:scale-95 shrink-0"
+            title="Volver atrás / Deshacer lo último puesto por error (trazo, figura, texto o dictado)"
+          >
+            <Undo2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+            <span>Deshacer</span>
+          </button>
         </div>
 
         {/* Note quick info */}
@@ -194,9 +268,19 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
         </div>
       </div>
 
-      {/* Main Workspace: Canvas, Text Pane, or Dictation Studio */}
+      {/* Main Workspace: Canvas, Text Pane, Dictation Studio, or Smart Diagram Studio */}
       <div className="flex-1 w-full flex flex-col md:flex-row overflow-hidden relative">
-        {showDictation ? (
+        {showSmartDiagram ? (
+          <SmartDiagramStudio
+            initialGraph={note.diagramGraph}
+            noteTitle={note.title}
+            onSaveGraph={(graph) => {
+              onUpdateNote({ diagramGraph: graph, updatedAt: Date.now() });
+            }}
+            onExportToNoteContent={handleInsertTextIntoNote}
+            onOpenInFullDiagramsTab={onOpenInFullDiagramsTab}
+          />
+        ) : showDictation ? (
           <DictationStudio
             initialText={note.content}
             onUpdateNoteContent={(newContent) => onUpdateNote({ content: newContent, updatedAt: Date.now() })}
@@ -340,7 +424,19 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
             {/* Typed Textarea */}
             <div className="flex-1 p-3 flex flex-col">
               <div className="flex items-center justify-between mb-1.5 px-0.5">
-                <span className="text-[11px] font-semibold text-slate-500">Contenido Escrito</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-semibold text-slate-500">Contenido Escrito</span>
+                  <button
+                    type="button"
+                    onClick={handleUndoText}
+                    disabled={textHistoryIndex <= 0}
+                    className="p-1 rounded text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 flex items-center gap-1 text-[11px] font-medium transition-colors"
+                    title="Deshacer última modificación de texto"
+                  >
+                    <Undo2 className="w-3 h-3" />
+                    <span>Deshacer</span>
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => setViewLayout('dictation')}
@@ -353,7 +449,7 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
               </div>
               <textarea
                 value={note.content}
-                onChange={(e) => onUpdateNote({ content: e.target.value, updatedAt: Date.now() })}
+                onChange={(e) => handleUpdateTextWithHistory(e.target.value)}
                 placeholder="Escribe tus notas en limpio aquí, o transfiere tus apuntes manuscritos y dictados de voz..."
                 className="w-full flex-1 p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-xs text-slate-800 dark:text-slate-200 leading-relaxed font-sans"
               />

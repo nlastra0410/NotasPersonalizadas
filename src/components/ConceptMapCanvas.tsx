@@ -24,6 +24,7 @@ import {
   Minimize2,
   Grid,
   Share2,
+  Undo2,
 } from 'lucide-react';
 import { ExportModal } from './ExportModal';
 
@@ -79,6 +80,32 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
 
   // Edge relationship editing
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+
+  // History stack for Undo
+  const [history, setHistory] = useState<ConceptGraph[]>([graph]);
+  const [historyIndex, setHistoryIndex] = useState<number>(0);
+
+  const pushGraphHistory = (newGraph: ConceptGraph) => {
+    const nextHist = history.slice(0, historyIndex + 1);
+    nextHist.push(newGraph);
+    if (nextHist.length > 25) nextHist.shift();
+    setHistory(nextHist);
+    setHistoryIndex(nextHist.length - 1);
+    onGraphChange(newGraph);
+  };
+
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      const prev = history[historyIndex - 1];
+      setHistoryIndex(historyIndex - 1);
+      onGraphChange(prev);
+    } else if (graph.nodes.length > 0) {
+      const nextNodes = graph.nodes.slice(0, -1);
+      const nextEdges = purgeOrphanEdges(nextNodes, graph.edges);
+      const nextGraph = { ...graph, nodes: nextNodes, edges: nextEdges };
+      onGraphChange(nextGraph);
+    }
+  };
 
   // Auto clean orphan edges on mount or graph update
   useEffect(() => {
@@ -610,7 +637,19 @@ export const ConceptMapCanvas: React.FC<ConceptMapCanvasProps> = ({
               title="Auto-organizar y alinear todos los bloques"
               aria-label="Auto-organizar"
             >
-              <RotateCcw className="w-4 h-4" />
+              <Grid className="w-4 h-4 text-blue-500" />
+            </button>
+
+            {/* Flecha de Volver Atrás / Deshacer */}
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={historyIndex <= 0 && graph.nodes.length === 0}
+              className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+              title="Volver atrás / Deshacer última figura, conexión o cambio puesto por error"
+            >
+              <Undo2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <span>Deshacer</span>
             </button>
 
             <button

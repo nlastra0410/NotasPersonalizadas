@@ -50,6 +50,7 @@ export interface NoteItem {
     duration?: number;
     timestamp: number;
   };
+  diagramGraph?: ConceptGraph;
 }
 
 export type Priority = 'high' | 'medium' | 'low';
@@ -67,7 +68,7 @@ export interface TaskItem {
 }
 
 export type DiagramType = 'mindmap' | 'flowchart' | 'architecture';
-export type NodeShape = 'rectangle' | 'rounded' | 'diamond' | 'cylinder' | 'cloud' | 'circle';
+export type NodeShape = 'rectangle' | 'rounded' | 'diamond' | 'cylinder' | 'cloud' | 'circle' | 'triangle';
 
 export interface ConceptNode {
   id: string;
@@ -98,7 +99,7 @@ export interface ConceptGraph {
 }
 
 export type ActiveTab = 'canvas' | 'organizer' | 'tasks' | 'concept';
-export type NoteViewLayout = 'canvas' | 'split' | 'text' | 'dictation';
+export type NoteViewLayout = 'canvas' | 'split' | 'text' | 'dictation' | 'smart_diagram';
 
 export interface SearchResultItem {
   id: string;

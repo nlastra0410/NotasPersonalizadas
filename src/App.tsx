@@ -355,6 +355,10 @@ export default function App() {
                 onToggleRightPane={() => setIsRightPaneOpen(!isRightPaneOpen)}
                 onConvertToTasks={handleConvertToTasks}
                 onConvertToConceptMap={handleConvertToConceptMap}
+                onOpenInFullDiagramsTab={(diagramGraph) => {
+                  setConceptGraph(diagramGraph);
+                  setActiveTab('concept');
+                }}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center p-6 text-center">

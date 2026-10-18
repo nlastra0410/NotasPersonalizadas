@@ -99,7 +99,9 @@ app.post('/api/recognize-handwriting', async (req, res) => {
     const cleanBase64 = image.replace(/^data:image\/\w+;base64,/, '');
 
     const promptInstructions =
-      mode === 'tasks'
+      mode === 'word'
+        ? `Transcribe con total exactitud la palabra o frase corta escrita a mano en esta imagen con lápiz digital. Devuelve únicamente la palabra o texto transcrito, con su ortografía y tildes en español, sin comillas ni explicaciones.`
+        : mode === 'tasks'
         ? `Transcribe el texto manuscrito de esta nota hecha con lápiz stylus en una tablet. 
 Identifica los elementos que sean tareas, recordatorios o listas de pendientes y devuélvelos en formato de lista con guiones:
 - [ ] Tarea 1

@@ -18,6 +18,7 @@ import {
   Clock,
   Play,
   Square,
+  Undo2,
 } from 'lucide-react';
 import { predictPunctuation } from '../utils/predictiveInk';
 
@@ -42,6 +43,8 @@ export const DictationStudio: React.FC<DictationStudioProps> = ({
 }) => {
   const [isListening, setIsListening] = useState<boolean>(false);
   const [transcriptText, setTranscriptText] = useState<string>(initialText || '');
+  const [transcriptHistory, setTranscriptHistory] = useState<string[]>([initialText || '']);
+  const [transcriptHistoryIndex, setTranscriptHistoryIndex] = useState<number>(0);
   const [interimText, setInterimText] = useState<string>('');
   const [dictationMode, setDictationMode] = useState<DictationMode>('continuous');
   const [autoSyncWithNote, setAutoSyncWithNote] = useState<boolean>(true);
@@ -50,6 +53,46 @@ export const DictationStudio: React.FC<DictationStudioProps> = ({
   const [isRefining, setIsRefining] = useState<boolean>(false);
   const [refinementStatus, setRefinementStatus] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const commitTranscriptChange = useCallback(
+    (newText: string) => {
+      setTranscriptText(newText);
+      setTranscriptHistory((prev) => {
+        const next = prev.slice(0, transcriptHistoryIndex + 1);
+        next.push(newText);
+        if (next.length > 25) next.shift();
+        return next;
+      });
+      setTranscriptHistoryIndex((prev) => Math.min(prev + 1, 24));
+    },
+    [transcriptHistoryIndex]
+  );
+
+  const handleUndo = useCallback(() => {
+    if (transcriptHistoryIndex > 0) {
+      const prev = transcriptHistory[transcriptHistoryIndex - 1];
+      setTranscriptHistoryIndex(transcriptHistoryIndex - 1);
+      setTranscriptText(prev);
+      if (autoSyncWithNote) {
+        onUpdateNoteContent(prev);
+      }
+    } else if (transcriptText) {
+      setTranscriptText('');
+      if (autoSyncWithNote) {
+        onUpdateNoteContent('');
+      }
+    }
+  }, [transcriptHistory, transcriptHistoryIndex, transcriptText, autoSyncWithNote, onUpdateNoteContent]);
+
+  useEffect(() => {
+    const onGlobalUndo = () => {
+      handleUndo();
+    };
+    window.addEventListener('notascribe:undo_dictation', onGlobalUndo);
+    return () => {
+      window.removeEventListener('notascribe:undo_dictation', onGlobalUndo);
+    };
+  }, [handleUndo]);
 
   // References
   const recognitionRef = useRef<any>(null);
@@ -601,7 +644,19 @@ export const DictationStudio: React.FC<DictationStudioProps> = ({
               )}
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
+              {/* Flecha de Volver Atrás / Deshacer */}
+              <button
+                type="button"
+                onClick={handleUndo}
+                disabled={transcriptHistoryIndex <= 0 && !transcriptText}
+                className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+                title="Volver atrás / Deshacer última frase o edición de texto puesta por error"
+              >
+                <Undo2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                <span>Deshacer</span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleCopy}

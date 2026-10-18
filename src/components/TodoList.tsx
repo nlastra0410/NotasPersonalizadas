@@ -12,6 +12,7 @@ import {
   Filter,
   Check,
   Download,
+  Undo2,
 } from 'lucide-react';
 
 interface TodoListProps {
@@ -33,6 +34,30 @@ export const TodoList: React.FC<TodoListProps> = ({
   const [newTaskPriority, setNewTaskPriority] = useState<Priority>('medium');
   const [newTaskDueDate, setNewTaskDueDate] = useState<string>('');
   const [newTaskNotebookId, setNewTaskNotebookId] = useState<string>('');
+
+  // History stack for Undo in Tasks
+  const [history, setHistory] = useState<TaskItem[][]>([tasks]);
+  const [historyIndex, setHistoryIndex] = useState<number>(0);
+
+  const pushTasksHistory = (newTasks: TaskItem[]) => {
+    const nextHist = history.slice(0, historyIndex + 1);
+    nextHist.push(newTasks);
+    if (nextHist.length > 25) nextHist.shift();
+    setHistory(nextHist);
+    setHistoryIndex(nextHist.length - 1);
+    onTasksChange(newTasks);
+  };
+
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      const prev = history[historyIndex - 1];
+      setHistoryIndex(historyIndex - 1);
+      onTasksChange(prev);
+    } else if (tasks.length > 0) {
+      const prev = tasks.slice(1);
+      onTasksChange(prev);
+    }
+  };
 
   const stats = calculateTaskStats(tasks);
   const sortedTasks = sortTasks(tasks);
@@ -58,7 +83,7 @@ export const TodoList: React.FC<TodoListProps> = ({
       }
       return t;
     });
-    onTasksChange(updated);
+    pushTasksHistory(updated);
   };
 
   const handleAddTask = (e?: React.FormEvent) => {
@@ -75,13 +100,13 @@ export const TodoList: React.FC<TodoListProps> = ({
       createdAt: Date.now(),
     };
 
-    onTasksChange([newTask, ...tasks]);
+    pushTasksHistory([newTask, ...tasks]);
     setNewTaskText('');
     setNewTaskDueDate('');
   };
 
   const handleDeleteTask = (id: string) => {
-    onTasksChange(tasks.filter((t) => t.id !== id));
+    pushTasksHistory(tasks.filter((t) => t.id !== id));
   };
 
   const handleClearCompleted = () => {
@@ -242,15 +267,29 @@ export const TodoList: React.FC<TodoListProps> = ({
               </button>
             </div>
 
-            {stats.completed > 0 && (
+            <div className="flex items-center gap-2">
+              {/* Flecha de Volver Atrás / Deshacer */}
               <button
                 type="button"
-                onClick={handleClearCompleted}
-                className="text-xs text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
+                onClick={handleUndo}
+                disabled={historyIndex <= 0 && tasks.length === 0}
+                className="px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+                title="Volver atrás / Deshacer última tarea añadida, marcada o borrada por error"
               >
-                Limpiar completadas
+                <Undo2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                <span>Deshacer</span>
               </button>
-            )}
+
+              {stats.completed > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearCompleted}
+                  className="text-xs text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
+                >
+                  Limpiar completadas
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Tasks List */}
