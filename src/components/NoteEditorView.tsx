@@ -18,6 +18,7 @@ import {
   Mic,
   Wand2,
   Undo2,
+  Trash2,
 } from 'lucide-react';
 import {
   getNotePages,
@@ -36,6 +37,7 @@ interface NoteEditorViewProps {
   onConvertToTasks?: (text: string) => void;
   onConvertToConceptMap?: (text: string) => void;
   onOpenInFullDiagramsTab?: (graph: ConceptGraph) => void;
+  onDeleteNote?: (id: string) => void;
 }
 
 export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
@@ -46,9 +48,11 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
   onConvertToTasks,
   onConvertToConceptMap,
   onOpenInFullDiagramsTab,
+  onDeleteNote,
 }) => {
   const [newTagInput, setNewTagInput] = useState<string>('');
   const [viewLayout, setViewLayout] = useState<NoteViewLayout>('canvas');
+  const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
 
   // Text undo history for the typed notes editor
   const [textHistory, setTextHistory] = useState<string[]>([note.content || '']);
@@ -258,13 +262,27 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
           </button>
         </div>
 
-        {/* Note quick info */}
-        <div className="flex items-center gap-3 text-[11px] text-slate-500">
-          <span>{pages.length} {pages.length === 1 ? 'página' : 'páginas'}</span>
-          <span>•</span>
-          <span>{totalStrokes} trazos</span>
-          <span>•</span>
-          <span>{note.content ? `${note.content.split(/\s+/).filter(Boolean).length} palabras` : '0 palabras'}</span>
+        {/* Note quick info and Delete Note button */}
+        <div className="flex items-center gap-3 text-[11px] text-slate-500 shrink-0">
+          <div className="hidden sm:flex items-center gap-2">
+            <span>{pages.length} {pages.length === 1 ? 'página' : 'páginas'}</span>
+            <span>•</span>
+            <span>{totalStrokes} trazos</span>
+            <span>•</span>
+            <span>{note.content ? `${note.content.split(/\s+/).filter(Boolean).length} palabras` : '0 palabras'}</span>
+          </div>
+
+          {onDeleteNote && (
+            <button
+              type="button"
+              onClick={() => setShowDeleteModal(true)}
+              className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 text-[11px] font-semibold flex items-center gap-1.5 transition-all shadow-2xs active:scale-95 shrink-0"
+              title="Eliminar esta nota por completo"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+              <span>Eliminar Nota</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -488,6 +506,52 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
           </>
         )}
       </div>
+
+      {/* Modal de confirmación para eliminar la nota */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="truncate">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  ¿Eliminar esta nota?
+                </h3>
+                <p className="text-xs text-slate-500 truncate">
+                  "{note.title || 'Nota sin título'}"
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-5">
+              Se eliminarán de forma permanente todos los trazos manuscritos, textos y diagramas contenidos en esta nota.
+            </p>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  onDeleteNote?.(note.id);
+                }}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-sm flex items-center gap-1.5 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Sí, Eliminar Nota</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

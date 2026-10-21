@@ -62,6 +62,7 @@ export const OrganizerSidebar: React.FC<OrganizerSidebarProps> = ({
   const [selectedNotebookId, setSelectedNotebookId] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [filterMode, setFilterMode] = useState<'active' | 'pinned' | 'archived' | 'trash'>('active');
+  const [noteToDelete, setNoteToDelete] = useState<NoteItem | null>(null);
 
   // Notebook creation modal
   const [isCreatingNotebook, setIsCreatingNotebook] = useState<boolean>(false);
@@ -378,22 +379,37 @@ export const OrganizerSidebar: React.FC<OrganizerSidebarProps> = ({
                     <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight truncate flex-1">
                       {note.title || 'Nota sin título'}
                     </h4>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onTogglePinNote(note.id);
-                      }}
-                      className={`p-1 rounded-md transition-colors ${
-                        note.isPinned
-                          ? 'text-amber-500'
-                          : 'text-slate-300 opacity-0 group-hover:opacity-100 hover:text-amber-500'
-                      }`}
-                      title={note.isPinned ? 'Desfijar' : 'Fijar nota'}
-                      aria-label="Fijar nota"
-                    >
-                      <Pin className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onTogglePinNote(note.id);
+                        }}
+                        className={`p-1 rounded-md transition-colors ${
+                          note.isPinned
+                            ? 'text-amber-500'
+                            : 'text-slate-300 opacity-60 sm:opacity-0 sm:group-hover:opacity-100 hover:text-amber-500'
+                        }`}
+                        title={note.isPinned ? 'Desfijar' : 'Fijar nota'}
+                        aria-label="Fijar nota"
+                      >
+                        <Pin className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setNoteToDelete(note);
+                        }}
+                        className="p-1 rounded-md text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                        title="Eliminar esta nota"
+                        aria-label="Eliminar nota"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Snippet */}
@@ -509,6 +525,50 @@ export const OrganizerSidebar: React.FC<OrganizerSidebarProps> = ({
           </button>
         )}
       </div>
+
+      {/* Delete Note Confirmation Modal */}
+      {noteToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 max-w-sm w-full border border-slate-200 dark:border-slate-800 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  ¿Eliminar esta nota?
+                </h3>
+                <p className="text-xs text-slate-500 truncate">
+                  "{noteToDelete.title || 'Nota sin título'}"
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">
+              Esta acción eliminará de forma permanente los trazos manuscritos, textos y diagramas contenidos en esta nota.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setNoteToDelete(null)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteNote(noteToDelete.id);
+                  setNoteToDelete(null);
+                }}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-sm flex items-center gap-1.5 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Sí, Eliminar</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 };

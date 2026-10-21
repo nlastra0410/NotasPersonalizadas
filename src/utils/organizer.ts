@@ -2,34 +2,8 @@
  * Note organizer, notebooks, search, and sorting logic.
  */
 
-export interface Notebook {
-  id: string;
-  name: string;
-  color: string;
-  icon: string;
-}
-
-export interface NoteItem {
-  id: string;
-  title: string;
-  content: string;
-  notebookId: string;
-  tags: string[];
-  isPinned: boolean;
-  isArchived: boolean;
-  isDeleted: boolean;
-  createdAt: number;
-  updatedAt: number;
-  ocrText?: string;
-  strokes?: any[];
-  audioNote?: {
-    transcript: string;
-    duration?: number;
-    timestamp: number;
-  };
-  hasDrawing?: boolean;
-  hasAudio?: boolean;
-}
+import type { NoteItem, Notebook } from '../types.ts';
+export type { NoteItem, Notebook };
 
 export type SortField = 'updatedAt' | 'createdAt' | 'title';
 export type SortDirection = 'asc' | 'desc';

@@ -59,7 +59,30 @@ describe('instantHandwritingRecognizer', () => {
     assert.equal(res, '-');
   });
 
-  it('recognizes multi-stroke writing inside a node', () => {
+  it('recognizes two-stroke plus symbol', () => {
+    const s1: Stroke = {
+      id: 's1',
+      points: [{ x: 10, y: 0 }, { x: 10, y: 40 }],
+      tool: 'pen',
+      color: '#000',
+      size: 2,
+      opacity: 1,
+      timestamp: Date.now(),
+    };
+    const s2: Stroke = {
+      id: 's2',
+      points: [{ x: 0, y: 20 }, { x: 20, y: 20 }],
+      tool: 'pen',
+      color: '#000',
+      size: 2,
+      opacity: 1,
+      timestamp: Date.now(),
+    };
+    const res = recognizeHandwritingInstant([s1, s2], 'node');
+    assert.equal(res, '+');
+  });
+
+  it('preserves multi-stroke natural handwriting without inventing dummy words', () => {
     const s1: Stroke = {
       id: 's1',
       points: [{ x: 10, y: 10 }, { x: 10, y: 30 }],
@@ -78,7 +101,7 @@ describe('instantHandwritingRecognizer', () => {
       opacity: 1,
       timestamp: Date.now(),
     };
-    const res = recognizeHandwritingInstant([s1, s2], 'node');
-    assert.ok(res.length > 0);
+    const res = recognizeHandwritingInstant([s1, s2], 'canvas');
+    assert.equal(res, '');
   });
 });

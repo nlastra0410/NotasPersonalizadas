@@ -89,6 +89,24 @@ export interface ConceptEdge {
   label?: string;
 }
 
+export interface FloatingTextItem {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  fontSize: number;
+  color: string;
+}
+
+export interface InkAnnotation {
+  id: string;
+  strokes: Stroke[];
+  bounds: { minX: number; maxX: number; minY: number; maxY: number; width: number; height: number; cx: number; cy: number };
+  color: string;
+  recognizedText?: string;
+  createdAt: number;
+}
+
 export interface ConceptGraph {
   id: string;
   title: string;
@@ -96,6 +114,8 @@ export interface ConceptGraph {
   noteId?: string;
   nodes: ConceptNode[];
   edges: ConceptEdge[];
+  inkAnnotations?: InkAnnotation[];
+  floatingTexts?: FloatingTextItem[];
 }
 
 export type ActiveTab = 'canvas' | 'organizer' | 'tasks' | 'concept';

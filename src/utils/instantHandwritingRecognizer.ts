@@ -88,41 +88,8 @@ export function recognizeHandwritingInstant(
     }
   }
 
-  // 3. Multi-stroke words based on aspect ratio, stroke count and context
-  // Context: writing inside a diagram shape
-  if (context === 'node') {
-    if (strokeCount <= 2 && totalLength < 180) {
-      return 'Inicio';
-    }
-    if (strokeCount === 3 || strokeCount === 4) {
-      if (aspectRatio > 2.2) return 'Proceso';
-      if (aspectRatio < 1.2) return 'Validar';
-      return 'Servidor';
-    }
-    if (strokeCount === 5 || strokeCount === 6) {
-      return 'Base de Datos';
-    }
-    if (aspectRatio > 3.0) {
-      return 'Resultado Final';
-    }
-    return 'Paso';
-  }
-
-  // Context: writing in free canvas space
-  if (aspectRatio > 4) {
-    return 'Título Principal';
-  }
-  if (aspectRatio > 2.5) {
-    if (strokeCount <= 3) return 'Nota';
-    if (strokeCount <= 5) return 'Descripción';
-    return 'Observaciones';
-  }
-  if (strokeCount <= 2) {
-    return 'Item 1';
-  }
-  if (strokeCount === 3) {
-    return 'Item 2';
-  }
-
-  return 'Anotación';
+  // For natural multi-stroke handwriting (words like 'hola', 'comprar', etc.),
+  // do NOT invent fake placeholder labels. Return empty string so the actual
+  // handwritten ink strokes are preserved cleanly on the canvas as written text!
+  return '';
 }

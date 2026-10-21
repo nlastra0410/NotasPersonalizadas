@@ -130,7 +130,43 @@ export function findClosestNode(
 }
 
 /**
- * Analyzes whether a stroke represents a geometric shape (circle, rectangle, diamond, cylinder, rounded, cloud).
+ * Counts local directional reversals in X and Y (peaks and valleys).
+ * Used to distinguish handwriting (which oscillates frequently) from simple geometric primitives.
+ */
+export function countDirectionChanges(points: Point[]): { xChanges: number; yChanges: number } {
+  if (points.length < 3) return { xChanges: 0, yChanges: 0 };
+
+  let xChanges = 0;
+  let yChanges = 0;
+  let lastDx = 0;
+  let lastDy = 0;
+  const minDelta = 4; // Ignore sub-pixel jitter
+
+  for (let i = 1; i < points.length; i++) {
+    const dx = points[i].x - points[i - 1].x;
+    const dy = points[i].y - points[i - 1].y;
+
+    if (Math.abs(dx) > minDelta) {
+      if (lastDx !== 0 && ((dx > 0 && lastDx < 0) || (dx < 0 && lastDx > 0))) {
+        xChanges++;
+      }
+      lastDx = dx;
+    }
+
+    if (Math.abs(dy) > minDelta) {
+      if (lastDy !== 0 && ((dy > 0 && lastDy < 0) || (dy < 0 && lastDy > 0))) {
+        yChanges++;
+      }
+      lastDy = dy;
+    }
+  }
+
+  return { xChanges, yChanges };
+}
+
+/**
+ * Analyzes whether a stroke genuinely represents a geometric shape (circle, rectangle, diamond, cylinder, triangle).
+ * Guaranteed to return null for handwritten words, handwriting loops, arrows, and freehand text.
  */
 export function detectGeometricShapeDetailed(points: Point[]): ShapeDetectionResult | null {
   if (points.length < 6) return null;
@@ -142,14 +178,26 @@ export function detectGeometricShapeDetailed(points: Point[]): ShapeDetectionRes
   const distStartEnd = Math.hypot(pEnd.x - pStart.x, pEnd.y - pStart.y);
 
   // Must have substantial size for a diagram node
-  if (bbox.width < 45 || bbox.height < 45 || pathLength < 120) {
+  if (bbox.width < 45 || bbox.height < 45 || pathLength < 110) {
     return null;
   }
 
-  // A shape must be closed or near-closed
-  const isClosed = distStartEnd < pathLength * 0.45;
+  // 1. Strict Closure Check: A real drawn geometric shape starts and finishes at approximately the same point
+  // For handwritten words (like 'hola'), start is at 'h' and end is at 'a', so distStartEnd is wide (~bbox.width)
+  const isClosed =
+    distStartEnd <= Math.min(50, Math.max(20, pathLength * 0.15)) &&
+    distStartEnd <= Math.min(bbox.width, bbox.height) * 0.32;
+
   if (!isClosed) {
     return null;
+  }
+
+  // 2. Handwriting vs Shape Oscillations Check:
+  // A geometric shape (circle, rectangle, diamond, triangle) has at most 2-3 directional reversals.
+  // A handwritten word has letters going up and down repeatedly (4 or more changes).
+  const { xChanges, yChanges } = countDirectionChanges(points);
+  if (yChanges >= 4 || xChanges >= 4) {
+    return null; // Definitely handwriting (multiple letter strokes), NOT a shape!
   }
 
   const aspectRatio = bbox.width / bbox.height;
@@ -161,37 +209,36 @@ export function detectGeometricShapeDetailed(points: Point[]): ShapeDetectionRes
     distances.reduce((sum, d) => sum + Math.pow(d - avgDist, 2), 0) / distances.length;
   const stdDevRatio = Math.sqrt(variance) / avgDist;
 
-  // 1. Circle Check: uniform radius from center (very low standard deviation) and aspect ratio ~ 1
-  if (aspectRatio >= 0.78 && aspectRatio <= 1.28 && stdDevRatio < 0.12) {
+  // 3. Circle Check: uniform radius from center and aspect ratio ~ 1
+  if (aspectRatio >= 0.78 && aspectRatio <= 1.28 && stdDevRatio < 0.16) {
     return { shape: 'circle', bounds: bbox, confidence: 0.94 };
   }
 
-  // 2. Check for Diamond (Rombo): top, bottom, left, right apexes and diagonal edges
+  // 4. Diamond (Rombo) Check: apexes at top, bottom, left, right and empty corners
   let nearTopApex = false;
   let nearBottomApex = false;
   let nearLeftApex = false;
   let nearRightApex = false;
 
   for (const p of points) {
-    if (Math.abs(p.y - bbox.minY) < bbox.height * 0.15 && Math.abs(p.x - bbox.cx) < bbox.width * 0.25) {
+    if (Math.abs(p.y - bbox.minY) < bbox.height * 0.16 && Math.abs(p.x - bbox.cx) < bbox.width * 0.25) {
       nearTopApex = true;
     }
-    if (Math.abs(p.y - bbox.maxY) < bbox.height * 0.15 && Math.abs(p.x - bbox.cx) < bbox.width * 0.25) {
+    if (Math.abs(p.y - bbox.maxY) < bbox.height * 0.16 && Math.abs(p.x - bbox.cx) < bbox.width * 0.25) {
       nearBottomApex = true;
     }
-    if (Math.abs(p.x - bbox.minX) < bbox.width * 0.15 && Math.abs(p.y - bbox.cy) < bbox.height * 0.25) {
+    if (Math.abs(p.x - bbox.minX) < bbox.width * 0.16 && Math.abs(p.y - bbox.cy) < bbox.height * 0.25) {
       nearLeftApex = true;
     }
-    if (Math.abs(p.x - bbox.maxX) < bbox.width * 0.15 && Math.abs(p.y - bbox.cy) < bbox.height * 0.25) {
+    if (Math.abs(p.x - bbox.maxX) < bbox.width * 0.16 && Math.abs(p.y - bbox.cy) < bbox.height * 0.25) {
       nearRightApex = true;
     }
   }
 
-  if (nearTopApex && nearBottomApex && nearLeftApex && nearRightApex && aspectRatio >= 0.7 && aspectRatio <= 1.45) {
-    // Check if points avoid the 4 rectangle corners
+  if (nearTopApex && nearBottomApex && nearLeftApex && nearRightApex && aspectRatio >= 0.65 && aspectRatio <= 1.45) {
     let cornersOccupied = 0;
-    const cornerThresholdX = bbox.width * 0.15;
-    const cornerThresholdY = bbox.height * 0.15;
+    const cornerThresholdX = bbox.width * 0.16;
+    const cornerThresholdY = bbox.height * 0.16;
     for (const p of points) {
       const isTopLeft = p.x < bbox.minX + cornerThresholdX && p.y < bbox.minY + cornerThresholdY;
       const isTopRight = p.x > bbox.maxX - cornerThresholdX && p.y < bbox.minY + cornerThresholdY;
@@ -202,22 +249,12 @@ export function detectGeometricShapeDetailed(points: Point[]): ShapeDetectionRes
       }
     }
 
-    if (cornersOccupied < points.length * 0.1) {
-      return { shape: 'diamond', bounds: bbox, confidence: 0.9 };
+    if (cornersOccupied < points.length * 0.12) {
+      return { shape: 'diamond', bounds: bbox, confidence: 0.92 };
     }
   }
 
-  // 3. Relaxed Circle Check if aspect ratio is close to 1 and radius variation is modest
-  if (aspectRatio >= 0.82 && aspectRatio <= 1.22 && stdDevRatio < 0.20) {
-    return { shape: 'circle', bounds: bbox, confidence: 0.88 };
-  }
-
-  // Cylinder: taller than wide, oval curves
-  if (aspectRatio >= 0.5 && aspectRatio <= 0.85 && bbox.height >= 90) {
-    return { shape: 'cylinder', bounds: bbox, confidence: 0.85 };
-  }
-
-  // Triangle: distinct wide base and pointed apex (or vice versa)
+  // 5. Triangle Check: pointed apex at top or bottom with wide base
   const topQuarterPoints = points.filter((p) => p.y < bbox.minY + bbox.height * 0.25);
   const bottomQuarterPoints = points.filter((p) => p.y > bbox.maxY - bbox.height * 0.25);
   if (topQuarterPoints.length >= 2 && bottomQuarterPoints.length >= 2) {
@@ -227,20 +264,66 @@ export function detectGeometricShapeDetailed(points: Point[]): ShapeDetectionRes
     const maxBottomX = Math.max(...bottomQuarterPoints.map((p) => p.x));
     const topW = maxTopX - minTopX;
     const bottomW = maxBottomX - minBottomX;
-    if (topW < bbox.width * 0.35 && bottomW > bbox.width * 0.65) {
+    if (topW < bbox.width * 0.35 && bottomW > bbox.width * 0.62) {
       return { shape: 'triangle', bounds: bbox, confidence: 0.9 };
     }
-    if (bottomW < bbox.width * 0.35 && topW > bbox.width * 0.65) {
+    if (bottomW < bbox.width * 0.35 && topW > bbox.width * 0.62) {
       return { shape: 'triangle', bounds: bbox, confidence: 0.9 };
     }
   }
 
-  // Rounded rectangle vs rectangle
-  if (aspectRatio > 1.3 || aspectRatio < 0.75) {
-    return { shape: 'rectangle', bounds: bbox, confidence: 0.88 };
+  // 6. Cylinder Check: taller than wide with two distinct horizontal curvature lobes
+  if (aspectRatio >= 0.45 && aspectRatio <= 0.82 && bbox.height >= 85) {
+    return { shape: 'cylinder', bounds: bbox, confidence: 0.85 };
   }
 
-  return { shape: 'rounded', bounds: bbox, confidence: 0.86 };
+  // 7. Strict Rectangle / Rounded Box Check:
+  // A true rectangle outline:
+  // - Points are concentrated near the 4 perimeter edges
+  // - The interior of the box is empty (not filled like a written word)
+  // - Reaches all 4 quadrants (top-left, top-right, bottom-left, bottom-right)
+  const edgeMarginX = Math.max(8, bbox.width * 0.22);
+  const edgeMarginY = Math.max(8, bbox.height * 0.22);
+
+  const nearPerimeterCount = points.filter((p) => {
+    return (
+      p.x < bbox.minX + edgeMarginX ||
+      p.x > bbox.maxX - edgeMarginX ||
+      p.y < bbox.minY + edgeMarginY ||
+      p.y > bbox.maxY - edgeMarginY
+    );
+  }).length;
+
+  const perimeterRatio = nearPerimeterCount / points.length;
+
+  // Check that the interior (central 40% of the box) is hollow (empty outline)
+  const innerLeft = bbox.minX + bbox.width * 0.3;
+  const innerRight = bbox.maxX - bbox.width * 0.3;
+  const innerTop = bbox.minY + bbox.height * 0.3;
+  const innerBottom = bbox.maxY - bbox.height * 0.3;
+  const innerPointsCount = points.filter(
+    (p) => p.x > innerLeft && p.x < innerRight && p.y > innerTop && p.y < innerBottom
+  ).length;
+
+  const interiorRatio = innerPointsCount / points.length;
+
+  // Corner quadrants check: must have points in all 4 corners
+  const hasTopLeft = points.some((p) => p.x <= bbox.cx && p.y <= bbox.cy);
+  const hasTopRight = points.some((p) => p.x >= bbox.cx && p.y <= bbox.cy);
+  const hasBottomLeft = points.some((p) => p.x <= bbox.cx && p.y >= bbox.cy);
+  const hasBottomRight = points.some((p) => p.x >= bbox.cx && p.y >= bbox.cy);
+  const hasAllCorners = hasTopLeft && hasTopRight && hasBottomLeft && hasBottomRight;
+
+  if (perimeterRatio >= 0.72 && interiorRatio <= 0.08 && hasAllCorners) {
+    return {
+      shape: aspectRatio > 1.25 || aspectRatio < 0.8 ? 'rectangle' : 'rounded',
+      bounds: bbox,
+      confidence: 0.89,
+    };
+  }
+
+  // If none of the strict geometric criteria match, it is NOT a shape!
+  return null;
 }
 
 /**
@@ -377,8 +460,8 @@ export function classifySmartStroke(
     return { type: 'shape', shapeResult: shapeMatch };
   }
 
-  // Check D: If path length is moderate and not closed, it could be a floating word or label
-  if (pathLength >= 30 && pathLength <= 350) {
+  // Check D: If it is not a shape or arrow, it is handwritten text or handwriting stroke!
+  if (pathLength >= 15) {
     return { type: 'text_floating', bounds: bbox, stroke };
   }
 

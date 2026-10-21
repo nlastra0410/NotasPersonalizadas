@@ -351,6 +351,7 @@ export default function App() {
               <NoteEditorView
                 note={activeNote}
                 onUpdateNote={handleUpdateActiveNote}
+                onDeleteNote={handleDeleteNote}
                 isRightPaneOpen={isRightPaneOpen}
                 onToggleRightPane={() => setIsRightPaneOpen(!isRightPaneOpen)}
                 onConvertToTasks={handleConvertToTasks}

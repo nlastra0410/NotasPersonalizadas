@@ -171,4 +171,48 @@ describe('smartDiagramRecognizer', () => {
       assert.equal(result.targetNodeId, 'node-1');
     }
   });
+
+  it('guarantees that a handwritten word like "hola" is NEVER recognized as a rectangle or shape', () => {
+    // Simulating cursive handwriting points for "hola"
+    // Multiple letters with vertical oscillations (peaks and valleys) across a 160px width
+    const holaPoints: Point[] = [
+      // 'h': down, up, hump down
+      { x: 50, y: 100 },
+      { x: 50, y: 150 },
+      { x: 52, y: 120 },
+      { x: 65, y: 110 },
+      { x: 75, y: 150 },
+      // 'o': loop
+      { x: 80, y: 135 },
+      { x: 90, y: 125 },
+      { x: 100, y: 135 },
+      { x: 95, y: 150 },
+      { x: 85, y: 145 },
+      // 'l': tall stroke
+      { x: 110, y: 100 },
+      { x: 112, y: 150 },
+      // 'a': loop and tail
+      { x: 125, y: 135 },
+      { x: 135, y: 125 },
+      { x: 145, y: 135 },
+      { x: 140, y: 150 },
+      { x: 155, y: 148 },
+    ];
+
+    const detected = detectGeometricShapeDetailed(holaPoints);
+    assert.equal(detected, null, 'Handwritten word "hola" must NOT be detected as a geometric shape or rectangle!');
+
+    const stroke: Stroke = {
+      id: 'hola-stroke',
+      points: holaPoints,
+      tool: 'pen',
+      color: '#2563eb',
+      size: 3,
+      opacity: 1,
+      timestamp: Date.now(),
+    };
+
+    const classification = classifySmartStroke(stroke, [], 'auto');
+    assert.equal(classification.type, 'text_floating', 'Handwritten word must be classified as floating text!');
+  });
 });

@@ -87,6 +87,10 @@ app.post('/api/recognize-handwriting', async (req, res) => {
     );
 
     if (!hasValidKey) {
+      if (mode === 'word') {
+        res.json({ text: '', confidence: 0 });
+        return;
+      }
       res.json({
         text: 'Nota manuscrita: Trazos fluidos con lápiz stylus y reconocimiento activo.',
         confidence: 0.95,

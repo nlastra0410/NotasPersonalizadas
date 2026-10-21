@@ -21,6 +21,8 @@ const mockNotes: NoteItem[] = [
     createdAt: 1000,
     updatedAt: 2000,
     ocrText: 'dy/dx = lim h->0',
+    strokes: [],
+    paperStyle: 'ruled',
   },
   {
     id: '2',
@@ -33,6 +35,8 @@ const mockNotes: NoteItem[] = [
     isDeleted: false,
     createdAt: 1200,
     updatedAt: 1500,
+    strokes: [],
+    paperStyle: 'ruled',
   },
   {
     id: '3',
@@ -45,6 +49,8 @@ const mockNotes: NoteItem[] = [
     isDeleted: false,
     createdAt: 800,
     updatedAt: 1800,
+    strokes: [],
+    paperStyle: 'ruled',
   },
   {
     id: '4',
@@ -57,6 +63,8 @@ const mockNotes: NoteItem[] = [
     isDeleted: true,
     createdAt: 500,
     updatedAt: 600,
+    strokes: [],
+    paperStyle: 'ruled',
   },
 ];
 

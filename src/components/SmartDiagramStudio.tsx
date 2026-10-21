@@ -6,6 +6,8 @@ import {
   NodeShape,
   Stroke,
   Point,
+  InkAnnotation,
+  FloatingTextItem,
 } from '../types';
 import {
   calculateBoundingBox,
@@ -32,16 +34,10 @@ import {
   Download,
   Info,
   Zap,
+  Wand2,
+  Square,
+  Check,
 } from 'lucide-react';
-
-interface FloatingTextItem {
-  id: string;
-  text: string;
-  x: number;
-  y: number;
-  fontSize: number;
-  color: string;
-}
 
 interface SmartDiagramStudioProps {
   initialGraph?: ConceptGraph;
@@ -78,28 +74,48 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
       diagramType: 'flowchart',
       nodes: [],
       edges: [],
+      inkAnnotations: initialGraph?.inkAnnotations || [],
+      floatingTexts: initialGraph?.floatingTexts || [],
     };
   });
 
-  // Floating text blocks created by writing with the pencil
-  const [floatingTexts, setFloatingTexts] = useState<FloatingTextItem[]>([]);
+  // Floating text blocks created by writing with the pencil or OCR
+  const [floatingTexts, setFloatingTexts] = useState<FloatingTextItem[]>(
+    () => initialGraph?.floatingTexts || []
+  );
+
+  // Handwritten ink annotations (words and drawings preserved on the canvas)
+  const [inkAnnotations, setInkAnnotations] = useState<InkAnnotation[]>(
+    () => initialGraph?.inkAnnotations || []
+  );
 
   // History for Undo
-  const [history, setHistory] = useState<{ graph: ConceptGraph; texts: FloatingTextItem[] }[]>([
-    { graph, texts: [] },
+  const [history, setHistory] = useState<{
+    graph: ConceptGraph;
+    texts: FloatingTextItem[];
+    ink: InkAnnotation[];
+  }[]>([
+    {
+      graph,
+      texts: initialGraph?.floatingTexts || [],
+      ink: initialGraph?.inkAnnotations || [],
+    },
   ]);
   const [historyIndex, setHistoryIndex] = useState<number>(0);
 
-  // Active Tool: 'pen' (Predictive: auto shapes, auto arrows, auto handwriting to text), 'eraser', 'select'
+  // Active Tool: 'pen', 'eraser', 'select'
   const [tool, setTool] = useState<'pen' | 'eraser' | 'select'>('pen');
+  // Pen Mode: 'auto' (shapes vector, words ink), 'shapes' (only geometric shapes), 'freehand' (all raw ink), 'words' (auto-digitalize words to font)
+  const [penMode, setPenMode] = useState<'auto' | 'shapes' | 'freehand' | 'words'>('auto');
   const [currentColor, setCurrentColor] = useState<string>('#2563eb');
   const [strokeSize, setStrokeSize] = useState<number>(3);
-  const [predictionSpeed, setPredictionSpeed] = useState<number>(120); // 120ms ultra-fast instant speed
+  const [predictionSpeed, setPredictionSpeed] = useState<number>(120); // 120ms ultra-fast speed
 
   // Active Selection & Dragging
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
+  const [selectedInkId, setSelectedInkId] = useState<string | null>(null);
 
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -118,7 +134,6 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
   // Predictive Handwriting Ink Cluster: collects strokes while writing words
   const pendingInkStrokesRef = useRef<Stroke[]>([]);
   const handwritingDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const [isRecognizingText, setIsRecognizingText] = useState<boolean>(false);
 
   // Visual Toast Feedback
   const [toast, setToast] = useState<{ message: string; sub?: string } | null>(null);
@@ -132,16 +147,22 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
 
   // Push to history
   const commitSnapshot = useCallback(
-    (newGraph: ConceptGraph, newTexts: FloatingTextItem[]) => {
+    (newGraph: ConceptGraph, newTexts: FloatingTextItem[], newInk: InkAnnotation[]) => {
       const cleanEdges = purgeOrphanEdges(newGraph.nodes, newGraph.edges);
-      const cleanedGraph = { ...newGraph, edges: cleanEdges };
+      const cleanedGraph: ConceptGraph = {
+        ...newGraph,
+        edges: cleanEdges,
+        floatingTexts: newTexts,
+        inkAnnotations: newInk,
+      };
 
       setGraph(cleanedGraph);
       setFloatingTexts(newTexts);
+      setInkAnnotations(newInk);
       onSaveGraph(cleanedGraph);
 
       const nextHist = history.slice(0, historyIndex + 1);
-      nextHist.push({ graph: cleanedGraph, texts: newTexts });
+      nextHist.push({ graph: cleanedGraph, texts: newTexts, ink: newInk });
       if (nextHist.length > 25) nextHist.shift();
       setHistory(nextHist);
       setHistoryIndex(nextHist.length - 1);
@@ -166,7 +187,8 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
     if (historyIndex > 0) {
       const prev = history[historyIndex - 1];
       setGraph(prev.graph);
-      setFloatingTexts(prev.texts);
+      setFloatingTexts(prev.texts || []);
+      setInkAnnotations(prev.ink || []);
       setHistoryIndex(historyIndex - 1);
       onSaveGraph(prev.graph);
       showToast('Deshecho');
@@ -174,19 +196,25 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
     }
 
     // 3. Fallback: if at history 0 but items exist, remove the last item
-    if (floatingTexts.length > 0) {
+    if (inkAnnotations.length > 0) {
+      const nextInk = inkAnnotations.slice(0, -1);
+      setInkAnnotations(nextInk);
+      commitSnapshot(graph, floatingTexts, nextInk);
+      showToast('Palabra manuscrita deshecha');
+    } else if (floatingTexts.length > 0) {
       const nextTexts = floatingTexts.slice(0, -1);
       setFloatingTexts(nextTexts);
+      commitSnapshot(graph, nextTexts, inkAnnotations);
       showToast('Texto deshecho');
     } else if (graph.nodes.length > 0) {
       const nextNodes = graph.nodes.slice(0, -1);
       const nextEdges = purgeOrphanEdges(nextNodes, graph.edges);
       const nextGraph = { ...graph, nodes: nextNodes, edges: nextEdges };
       setGraph(nextGraph);
-      onSaveGraph(nextGraph);
+      commitSnapshot(nextGraph, floatingTexts, inkAnnotations);
       showToast('Figura deshecha');
     }
-  }, [history, historyIndex, graph, floatingTexts, onSaveGraph]);
+  }, [history, historyIndex, graph, floatingTexts, inkAnnotations, onSaveGraph, commitSnapshot]);
 
   // Listen to global undo event from NoteEditorView
   useEffect(() => {
@@ -250,28 +278,153 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
     };
   };
 
-  // Process completed cluster of handwriting strokes into digital keyboard text INSTANTLY (< 2ms)
-  const processHandwritingCluster = () => {
-    const strokes = [...pendingInkStrokesRef.current];
-    pendingInkStrokesRef.current = [];
-    redrawInkOverlay();
+  // Background OCR prefetch for handwritten words (does not replace the user's ink)
+  const prefetchOcrForAnnotation = (ann: InkAnnotation, targetNode?: ConceptNode) => {
+    try {
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = Math.max(120, Math.round(ann.bounds.width + 40));
+      offCanvas.height = Math.max(70, Math.round(ann.bounds.height + 40));
+      const ctx = offCanvas.getContext('2d');
+      if (!ctx) return;
 
-    if (strokes.length === 0) return;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 3.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
 
-    // Calculate cluster bounding box
-    const allPoints = strokes.flatMap((s) => s.points);
-    const bbox = calculateBoundingBox(allPoints);
+      for (const stroke of ann.strokes) {
+        if (stroke.points.length < 2) continue;
+        ctx.beginPath();
+        ctx.moveTo(stroke.points[0].x - ann.bounds.minX + 20, stroke.points[0].y - ann.bounds.minY + 20);
+        for (let i = 1; i < stroke.points.length; i++) {
+          ctx.lineTo(stroke.points[i].x - ann.bounds.minX + 20, stroke.points[i].y - ann.bounds.minY + 20);
+        }
+        ctx.stroke();
+      }
 
-    // Check if the writing occurred inside an existing shape
-    const targetNode = graph.nodes.find((n) => isPointInsideNode(allPoints[0], n));
+      const base64 = offCanvas.toDataURL('image/png');
+      fetch('/api/recognize-handwriting', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64, mode: 'word' }),
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (!data || !data.text) return;
+          const refined = data.text.trim().split('\n')[0].replace(/^["']|["']$/g, '');
+          if (refined && !refined.startsWith('Nota manuscrita')) {
+            setInkAnnotations((prev) =>
+              prev.map((item) => (item.id === ann.id ? { ...item, recognizedText: refined } : item))
+            );
+          }
+        })
+        .catch(() => {});
+    } catch {}
+  };
 
-    // 1. INSTANT LOCAL CONVERSION (0ms!)
-    const instantWord = recognizeHandwritingInstant(strokes, targetNode ? 'node' : 'canvas');
-    const createdId = `text-${Date.now()}`;
-    applyRecognizedDigitalText(instantWord, bbox, targetNode, createdId);
+  // Convert a preserved handwritten annotation to digital typography upon user request
+  const convertInkAnnotationToDigitalText = async (ann: InkAnnotation, customWord?: string) => {
+    let word = customWord || ann.recognizedText;
 
-    // 2. NON-BLOCKING ASYNC AI BACKGROUND REFINEMENT
-    // Does not block the UI for a single millisecond
+    if (!word) {
+      showToast('Digitalizando palabra...', 'Reconociendo caligrafía...');
+      try {
+        const offCanvas = document.createElement('canvas');
+        offCanvas.width = Math.max(120, Math.round(ann.bounds.width + 40));
+        offCanvas.height = Math.max(70, Math.round(ann.bounds.height + 40));
+        const ctx = offCanvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 3.5;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+
+          for (const stroke of ann.strokes) {
+            if (stroke.points.length < 2) continue;
+            ctx.beginPath();
+            ctx.moveTo(stroke.points[0].x - ann.bounds.minX + 20, stroke.points[0].y - ann.bounds.minY + 20);
+            for (let i = 1; i < stroke.points.length; i++) {
+              ctx.lineTo(stroke.points[i].x - ann.bounds.minX + 20, stroke.points[i].y - ann.bounds.minY + 20);
+            }
+            ctx.stroke();
+          }
+
+          const base64 = offCanvas.toDataURL('image/png');
+          const res = await fetch('/api/recognize-handwriting', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64, mode: 'word' }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.text && !data.text.startsWith('Nota manuscrita')) {
+              word = data.text.trim().split('\n')[0].replace(/^["']|["']$/g, '');
+            }
+          }
+        }
+      } catch {}
+    }
+
+    if (!word) {
+      word = 'Texto';
+    }
+
+    // Check if written inside a shape
+    const targetNode = graph.nodes.find((n) =>
+      ann.strokes[0]?.points[0] ? isPointInsideNode(ann.strokes[0].points[0], n) : false
+    );
+
+    const nextInk = inkAnnotations.filter((item) => item.id !== ann.id);
+    setInkAnnotations(nextInk);
+
+    if (targetNode) {
+      const updatedNodes = graph.nodes.map((n) =>
+        n.id === targetNode.id
+          ? {
+              ...n,
+              label:
+                n.label &&
+                n.label !== 'Elemento' &&
+                n.label !== 'Círculo' &&
+                n.label !== 'Rectángulo' &&
+                n.label !== 'Decisión' &&
+                n.label !== 'Triángulo'
+                  ? `${n.label} ${word}`
+                  : word,
+            }
+          : n
+      );
+      commitSnapshot({ ...graph, nodes: updatedNodes }, floatingTexts, nextInk);
+      setSelectedInkId(null);
+      setSelectedNodeId(targetNode.id);
+      showToast(`¡Texto asignado a la figura! "${word}"`);
+    } else {
+      const newText: FloatingTextItem = {
+        id: `text-${Date.now()}`,
+        text: word,
+        x: Math.round(ann.bounds.minX),
+        y: Math.round(ann.bounds.minY),
+        fontSize: Math.max(14, Math.min(26, Math.round(ann.bounds.height * 0.75))),
+        color: ann.color || currentColor,
+      };
+      commitSnapshot(graph, [...floatingTexts, newText], nextInk);
+      setSelectedInkId(null);
+      setSelectedTextId(newText.id);
+      showToast(`¡Palabra digitalizada! "${word}"`);
+    }
+  };
+
+  // Convert strokes directly to text (only in 'words' mode)
+  const convertStrokesToDigitalTextDirect = async (
+    strokes: Stroke[],
+    bbox: any,
+    targetNode?: ConceptNode
+  ) => {
+    let word = '';
     try {
       const offCanvas = document.createElement('canvas');
       offCanvas.width = Math.max(120, Math.round(bbox.width + 40));
@@ -296,66 +449,106 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
         }
 
         const base64 = offCanvas.toDataURL('image/png');
-        fetch('/api/recognize-handwriting', {
+        const res = await fetch('/api/recognize-handwriting', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image: base64, mode: 'word' }),
-        })
-          .then((res) => (res.ok ? res.json() : null))
-          .then((data) => {
-            if (!data || !data.text) return;
-            const refined = data.text.trim().split('\n')[0];
-            if (refined && !refined.startsWith('Nota manuscrita') && refined !== instantWord) {
-              if (targetNode) {
-                setGraph((prev) => ({
-                  ...prev,
-                  nodes: prev.nodes.map((n) => (n.id === targetNode.id ? { ...n, label: refined } : n)),
-                }));
-              } else {
-                setFloatingTexts((prev) =>
-                  prev.map((t) => (t.id === createdId ? { ...t, text: refined } : t))
-                );
-              }
-            }
-          })
-          .catch(() => {});
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.text && !data.text.startsWith('Nota manuscrita')) {
+            word = data.text.trim().split('\n')[0].replace(/^["']|["']$/g, '');
+          }
+        }
       }
     } catch {}
-  };
 
-  const applyRecognizedDigitalText = (
-    word: string,
-    bbox: any,
-    targetNode?: ConceptNode,
-    createdId?: string
-  ) => {
+    if (!word) {
+      word = 'Texto';
+    }
+
     if (targetNode) {
-      // Update the node's digital label
       const updatedNodes = graph.nodes.map((n) =>
         n.id === targetNode.id
           ? {
               ...n,
-              label: n.label && n.label !== 'Elemento' && n.label !== 'Nuevo' && n.label !== 'Círculo' && n.label !== 'Rectángulo'
-                ? `${n.label} ${word}`
-                : word,
+              label:
+                n.label &&
+                n.label !== 'Elemento' &&
+                n.label !== 'Círculo' &&
+                n.label !== 'Rectángulo'
+                  ? `${n.label} ${word}`
+                  : word,
             }
           : n
       );
-      commitSnapshot({ ...graph, nodes: updatedNodes }, floatingTexts);
+      commitSnapshot({ ...graph, nodes: updatedNodes }, floatingTexts, inkAnnotations);
       showToast(`¡Texto en figura! "${word}"`);
     } else {
-      // Place a new digital text block right where written
       const newText: FloatingTextItem = {
-        id: createdId || `text-${Date.now()}`,
+        id: `text-${Date.now()}`,
         text: word,
         x: Math.round(bbox.minX),
         y: Math.round(bbox.minY),
         fontSize: Math.max(14, Math.min(26, Math.round(bbox.height * 0.75))),
         color: currentColor,
       };
-      commitSnapshot(graph, [...floatingTexts, newText]);
+      commitSnapshot(graph, [...floatingTexts, newText], inkAnnotations);
       showToast(`¡Palabra digitalizada! "${word}"`);
     }
+  };
+
+  // Process completed cluster of handwriting strokes:
+  // "si escribo una palabra me deje la palabra escrita"
+  const processHandwritingCluster = () => {
+    const strokes = [...pendingInkStrokesRef.current];
+    pendingInkStrokesRef.current = [];
+    redrawInkOverlay();
+
+    if (strokes.length === 0) return;
+
+    // Calculate cluster bounding box
+    const allPoints = strokes.flatMap((s) => s.points);
+    const bbox = calculateBoundingBox(allPoints);
+
+    // Check if the writing occurred inside an existing shape
+    const targetNode = graph.nodes.find((n) => isPointInsideNode(allPoints[0], n));
+
+    // If user explicitly configured 'words' mode (Auto-Digitalizar a tipografía con OCR)
+    if (penMode === 'words') {
+      convertStrokesToDigitalTextDirect(strokes, bbox, targetNode);
+      return;
+    }
+
+    // Default Behavior (Mode 'auto' or 'freehand'):
+    // PRESERVE THE WRITTEN WORD ON THE CANVAS EXACTLY AS WRITTEN!
+    const newAnnotation: InkAnnotation = {
+      id: `ink-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      strokes,
+      bounds: bbox,
+      color: currentColor,
+      createdAt: Date.now(),
+    };
+
+    const nextInk = [...inkAnnotations, newAnnotation];
+    setInkAnnotations(nextInk);
+    commitSnapshot(graph, floatingTexts, nextInk);
+    setSelectedInkId(newAnnotation.id);
+
+    if (targetNode) {
+      showToast(
+        '¡Palabra escrita en figura!',
+        'Se conserva escrita a mano. Pulsa "Digitalizar" para asignarla como texto del nodo.'
+      );
+    } else {
+      showToast(
+        '¡Palabra escrita conservada!',
+        'Tu caligrafía se mantiene en el lienzo. Pulsa "Digitalizar" si deseas pasarla a tipografía.'
+      );
+    }
+
+    // Background OCR so user can convert with 1 tap if desired
+    prefetchOcrForAnnotation(newAnnotation, targetNode);
   };
 
   // Pointer event handlers for drawing and predictive recognition
@@ -365,17 +558,37 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
 
     if (tool === 'eraser') {
       const pt = getLocalCoords(e.clientX, e.clientY);
+
+      // Check if clicked an ink annotation
+      const clickedInk = inkAnnotations.find(
+        (ann) =>
+          pt.x >= ann.bounds.minX - 15 &&
+          pt.x <= ann.bounds.maxX + 15 &&
+          pt.y >= ann.bounds.minY - 15 &&
+          pt.y <= ann.bounds.maxY + 15
+      );
+      if (clickedInk) {
+        const nextInk = inkAnnotations.filter((ann) => ann.id !== clickedInk.id);
+        commitSnapshot(graph, floatingTexts, nextInk);
+        showToast('Trazo manuscrito borrado');
+        return;
+      }
+
+      // Check if clicked a node
       const clickedNode = graph.nodes.find((n) => isPointInsideNode(pt, n) || isPointNearNode(pt, n, 20));
       if (clickedNode) {
         const updatedNodes = graph.nodes.filter((n) => n.id !== clickedNode.id);
         const updatedEdges = purgeOrphanEdges(updatedNodes, graph.edges);
-        commitSnapshot({ ...graph, nodes: updatedNodes, edges: updatedEdges }, floatingTexts);
+        commitSnapshot({ ...graph, nodes: updatedNodes, edges: updatedEdges }, floatingTexts, inkAnnotations);
         showToast('Figura borrada');
         return;
       }
+
+      // Check if clicked floating text
       const clickedText = floatingTexts.find((t) => Math.hypot(t.x - pt.x, t.y - pt.y) < 45);
       if (clickedText) {
-        commitSnapshot(graph, floatingTexts.filter((t) => t.id !== clickedText.id));
+        const nextTexts = floatingTexts.filter((t) => t.id !== clickedText.id);
+        commitSnapshot(graph, nextTexts, inkAnnotations);
         showToast('Texto borrado');
         return;
       }
@@ -420,89 +633,83 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
       return;
     }
 
-    const bbox = calculateBoundingBox(points);
-    const pathLength = calculatePathLength(points);
-    const distStartEnd = Math.hypot(
-      points[points.length - 1].x - points[0].x,
-      points[points.length - 1].y - points[0].y
-    );
-
     // 1. PREDICTIVE ARROW / CONNECTOR CHECK
-    // If the stroke connects two existing shapes:
-    const arrow = detectConnectingArrow(points, graph.nodes);
-    if (arrow) {
-      // If there were pending handwriting strokes, clear them
-      pendingInkStrokesRef.current = [];
-      redrawInkOverlay();
+    if (penMode === 'auto' || penMode === 'shapes') {
+      const arrow = detectConnectingArrow(points, graph.nodes);
+      if (arrow) {
+        pendingInkStrokesRef.current = [];
+        redrawInkOverlay();
 
-      const exists = graph.edges.some(
-        (ed) => ed.sourceId === arrow.sourceId && ed.targetId === arrow.targetId
-      );
-
-      if (!exists) {
-        const newEdge: ConceptEdge = {
-          id: `edge-${Date.now()}`,
-          sourceId: arrow.sourceId,
-          targetId: arrow.targetId,
-          label: '',
-        };
-        commitSnapshot({ ...graph, edges: [...graph.edges, newEdge] }, floatingTexts);
-        showToast(
-          `¡Flecha digitalizada!`,
-          `${arrow.sourceNode.label || 'Figura'} ➔ ${arrow.targetNode.label || 'Figura'}`
+        const exists = graph.edges.some(
+          (ed) => ed.sourceId === arrow.sourceId && ed.targetId === arrow.targetId
         );
-      } else {
-        showToast('Las figuras ya estaban unidas con flecha');
+
+        if (!exists) {
+          const newEdge: ConceptEdge = {
+            id: `edge-${Date.now()}`,
+            sourceId: arrow.sourceId,
+            targetId: arrow.targetId,
+            label: '',
+          };
+          commitSnapshot({ ...graph, edges: [...graph.edges, newEdge] }, floatingTexts, inkAnnotations);
+          showToast(
+            `¡Flecha digitalizada!`,
+            `${arrow.sourceNode.label || 'Figura'} ➔ ${arrow.targetNode.label || 'Figura'}`
+          );
+        } else {
+          showToast('Las figuras ya estaban unidas con flecha');
+        }
+        return;
       }
-      return;
     }
 
     // 2. PREDICTIVE GEOMETRIC SHAPE CHECK
-    // A closed loop with substantial size -> Perfect digitized geometric shape
-    const isClosedLoop = distStartEnd < pathLength * 0.42 && bbox.width >= 35 && bbox.height >= 35;
-    if (isClosedLoop) {
+    // "si hago figuras las transforme en figuras"
+    // CRITICAL: ONLY transform if shapeResult is genuinely detected.
+    // NEVER fall back to rectangle when it is a written word or non-shape!
+    if (penMode === 'auto' || penMode === 'shapes') {
       const shapeResult = detectGeometricShapeDetailed(points);
-      const recognizedShape: NodeShape = shapeResult ? shapeResult.shape : 'rectangle';
+      if (shapeResult) {
+        const recognizedShape: NodeShape = shapeResult.shape;
 
-      // Clear any pending handwriting strokes
-      pendingInkStrokesRef.current = [];
-      redrawInkOverlay();
+        pendingInkStrokesRef.current = [];
+        redrawInkOverlay();
 
-      // Create perfect digitized node
-      const newNode: ConceptNode = {
-        id: `node-${Date.now()}`,
-        label:
-          recognizedShape === 'circle'
-            ? 'Círculo'
-            : recognizedShape === 'diamond'
-            ? 'Decisión'
-            : recognizedShape === 'triangle'
-            ? 'Triángulo'
-            : recognizedShape === 'cylinder'
-            ? 'Base de Datos'
-            : 'Rectángulo',
-        x: Math.round(bbox.cx),
-        y: Math.round(bbox.cy),
-        color: currentColor,
-        shape: recognizedShape,
-        width: Math.max(120, Math.round(bbox.width)),
-        height: Math.max(60, Math.round(bbox.height)),
-      };
+        const newNode: ConceptNode = {
+          id: `node-${Date.now()}`,
+          label:
+            recognizedShape === 'circle'
+              ? 'Círculo'
+              : recognizedShape === 'diamond'
+              ? 'Decisión'
+              : recognizedShape === 'triangle'
+              ? 'Triángulo'
+              : recognizedShape === 'cylinder'
+              ? 'Base de Datos'
+              : 'Rectángulo',
+          x: Math.round(shapeResult.bounds.cx),
+          y: Math.round(shapeResult.bounds.cy),
+          color: currentColor,
+          shape: recognizedShape,
+          width: Math.max(120, Math.round(shapeResult.bounds.width)),
+          height: Math.max(60, Math.round(shapeResult.bounds.height)),
+        };
 
-      commitSnapshot({ ...graph, nodes: [...graph.nodes, newNode] }, floatingTexts);
-      setSelectedNodeId(newNode.id);
-      showToast(
-        `¡Figura perfecta digitalizada!`,
-        `${recognizedShape === 'circle' ? 'Círculo' : recognizedShape === 'diamond' ? 'Rombo' : recognizedShape === 'triangle' ? 'Triángulo' : recognizedShape === 'cylinder' ? 'Cilindro' : 'Rectángulo'} vectorizado`
-      );
-      return;
+        commitSnapshot({ ...graph, nodes: [...graph.nodes, newNode] }, floatingTexts, inkAnnotations);
+        setSelectedNodeId(newNode.id);
+        showToast(
+          `¡Figura perfecta digitalizada!`,
+          `${recognizedShape === 'circle' ? 'Círculo' : recognizedShape === 'diamond' ? 'Rombo' : recognizedShape === 'triangle' ? 'Triángulo' : recognizedShape === 'cylinder' ? 'Cilindro' : 'Rectángulo'} vectorizado`
+        );
+        return;
+      }
     }
 
-    // 3. PREDICTIVE HANDWRITING TO TEXT CHECK
-    // The stroke is neither a closed shape nor a connector between shapes:
-    // It is handwriting!
+    // 3. PREDICTIVE HANDWRITING TO WRITTEN WORD CHECK
+    // ("si escribo una palabra me deje la palabra escrita")
+    // When writing letters or words, collect the ink strokes
     const newStroke: Stroke = {
-      id: `stroke-${Date.now()}`,
+      id: `stroke-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       points,
       tool: 'pen',
       color: currentColor,
@@ -514,7 +721,7 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
     pendingInkStrokesRef.current.push(newStroke);
     redrawInkOverlay();
 
-    // Reset handwriting cluster debounce timer (200ms ultra-fast speed)
+    // Reset handwriting cluster debounce timer
     if (handwritingDebounceTimerRef.current) {
       clearTimeout(handwritingDebounceTimerRef.current);
     }
@@ -529,6 +736,7 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
     setSelectedNodeId(node.id);
     setSelectedEdgeId(null);
     setSelectedTextId(null);
+    setSelectedInkId(null);
 
     const pt = getLocalCoords(e.clientX, e.clientY);
     setDraggingNodeId(node.id);
@@ -556,7 +764,7 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
   const handleContainerPointerUp = () => {
     if (draggingNodeId) {
       setDraggingNodeId(null);
-      commitSnapshot(graph, floatingTexts);
+      commitSnapshot(graph, floatingTexts, inkAnnotations);
     }
   };
 
@@ -571,7 +779,7 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
     const updated = graph.nodes.map((n) =>
       n.id === editingNodeId ? { ...n, label: tempEditText.trim() || n.label } : n
     );
-    commitSnapshot({ ...graph, nodes: updated }, floatingTexts);
+    commitSnapshot({ ...graph, nodes: updated }, floatingTexts, inkAnnotations);
     setEditingNodeId(null);
   };
 
@@ -586,7 +794,7 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
     const updated = floatingTexts.map((t) =>
       t.id === editingTextId ? { ...t, text: tempEditText.trim() || t.text } : t
     );
-    commitSnapshot(graph, updated);
+    commitSnapshot(graph, updated, inkAnnotations);
     setEditingTextId(null);
   };
 
@@ -595,25 +803,35 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
     if (selectedNodeId) {
       const updatedNodes = graph.nodes.filter((n) => n.id !== selectedNodeId);
       const updatedEdges = purgeOrphanEdges(updatedNodes, graph.edges);
-      commitSnapshot({ ...graph, nodes: updatedNodes, edges: updatedEdges }, floatingTexts);
+      commitSnapshot({ ...graph, nodes: updatedNodes, edges: updatedEdges }, floatingTexts, inkAnnotations);
       setSelectedNodeId(null);
       showToast('Figura eliminada');
     } else if (selectedEdgeId) {
       const updatedEdges = graph.edges.filter((e) => e.id !== selectedEdgeId);
-      commitSnapshot({ ...graph, edges: updatedEdges }, floatingTexts);
+      commitSnapshot({ ...graph, edges: updatedEdges }, floatingTexts, inkAnnotations);
       setSelectedEdgeId(null);
       showToast('Flecha eliminada');
     } else if (selectedTextId) {
-      const updatedTexts = floatingTexts.filter((t) => t.id !== selectedTextId);
-      commitSnapshot(graph, updatedTexts);
+      const nextTexts = floatingTexts.filter((t) => t.id !== selectedTextId);
+      commitSnapshot(graph, nextTexts, inkAnnotations);
       setSelectedTextId(null);
       showToast('Texto eliminado');
+    } else if (selectedInkId) {
+      const nextInk = inkAnnotations.filter((ann) => ann.id !== selectedInkId);
+      commitSnapshot(graph, floatingTexts, nextInk);
+      setSelectedInkId(null);
+      showToast('Palabra manuscrita eliminada');
     }
   };
 
   // Clear All Canvas contents with instant Undo support
   const handleClearAll = () => {
-    if (graph.nodes.length === 0 && floatingTexts.length === 0 && pendingInkStrokesRef.current.length === 0) {
+    if (
+      graph.nodes.length === 0 &&
+      floatingTexts.length === 0 &&
+      inkAnnotations.length === 0 &&
+      pendingInkStrokesRef.current.length === 0
+    ) {
       showToast('El lienzo ya está vacío');
       return;
     }
@@ -630,12 +848,15 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
       if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
 
-    commitSnapshot({ ...graph, nodes: [], edges: [] }, []);
+    commitSnapshot({ ...graph, nodes: [], edges: [] }, [], []);
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
     setSelectedTextId(null);
+    setSelectedInkId(null);
     showToast('Lienzo borrado por completo', 'Pulsa Deshacer (↩) si deseas recuperarlo');
   };
+
+
 
   // Sync canvas size
   useEffect(() => {
@@ -713,7 +934,7 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
                     const updated = graph.nodes.map((n) =>
                       n.id === selectedNodeId ? { ...n, color: c.value } : n
                     );
-                    commitSnapshot({ ...graph, nodes: updated }, floatingTexts);
+                    commitSnapshot({ ...graph, nodes: updated }, floatingTexts, inkAnnotations);
                   }
                 }}
                 className={`w-5 h-5 rounded-full transition-transform ${
@@ -728,8 +949,79 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
           </div>
         </div>
 
-        {/* Center: Recognition speed toggle & status */}
-        <div className="flex items-center gap-2">
+        {/* Center: Pen Mode Selector (Híbrido / Figuras / Manuscrito / Digitalizar) & Speed */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setPenMode('auto');
+                showToast('Modo Híbrido Activo', 'Figuras ➔ Formas vectoriales | Palabras ➔ Manuscrito conservado');
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all whitespace-nowrap shrink-0 ${
+                penMode === 'auto'
+                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-2xs font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+              title="Híbrido: Transforma figuras en formas perfectas y conserva las palabras como manuscrito con opción de digitalizarlas con 1 toque"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+              <span>Híbrido</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setPenMode('shapes');
+                showToast('Modo Solo Figuras', 'Solo transforma figuras cerradas y flechas');
+              }}
+              className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all whitespace-nowrap shrink-0 ${
+                penMode === 'shapes'
+                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-2xs font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+              title="Solo Figuras: Convierte trazos cerrados en figuras geométricas perfectas"
+            >
+              <Square className="w-3.5 h-3.5 text-emerald-500" />
+              <span className="hidden sm:inline">Figuras</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setPenMode('freehand');
+                showToast('Modo Solo Manuscrito', 'Trazos libres de lápiz: no transforma figuras');
+              }}
+              className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all whitespace-nowrap shrink-0 ${
+                penMode === 'freehand'
+                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-2xs font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+              title="Solo Manuscrito: Escribe palabras y notas sin transformar nada a figuras"
+            >
+              <Pen className="w-3.5 h-3.5 text-amber-500" />
+              <span className="hidden sm:inline">Manuscrito</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setPenMode('words');
+                showToast('Modo Auto-Digitalizar', 'Convierte palabras manuscritas directamente a texto tipográfico con IA');
+              }}
+              className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all whitespace-nowrap shrink-0 ${
+                penMode === 'words'
+                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-2xs font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+              title="Auto-Digitalizar: Pasa cada palabra escrita directamente a texto tipográfico"
+            >
+              <Type className="w-3.5 h-3.5 text-indigo-500" />
+              <span className="hidden sm:inline">Digitalizar</span>
+            </button>
+          </div>
+
+          {/* Speed Toggle */}
           <button
             type="button"
             onClick={() => {
@@ -737,16 +1029,12 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
               setPredictionSpeed(next);
               showToast(`Velocidad predictiva: ${next === 120 ? '⚡ Instantáneo (120ms)' : '⏱️ Rápido (250ms)'}`);
             }}
-            className="px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/80 text-[11px] font-bold flex items-center gap-1 transition-all shadow-2xs"
-            title="Pulsa para alternar la velocidad predictiva (120ms ultra-rápido instantáneo)"
+            className="px-2 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/80 text-[11px] font-bold flex items-center gap-1 transition-all shadow-2xs shrink-0 whitespace-nowrap"
+            title="Pulsa para alternar la velocidad predictiva"
           >
-            <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
-            <span>{predictionSpeed === 120 ? '⚡ Instantáneo (120ms)' : '⏱️ Rápido (250ms)'}</span>
+            <Zap className="w-3 h-3 text-amber-500 fill-amber-400" />
+            <span>{predictionSpeed === 120 ? '120ms' : '250ms'}</span>
           </button>
-
-          <span className="text-[11px] text-slate-400 hidden xl:inline">
-            Figuras y flechas instantáneas (0ms)
-          </span>
         </div>
 
         {/* Right: Actions */}
@@ -756,7 +1044,7 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
             type="button"
             onClick={() => {
               const organized = autoLayoutNodes(graph.nodes, 400, 260, 210);
-              commitSnapshot({ ...graph, nodes: organized }, floatingTexts);
+              commitSnapshot({ ...graph, nodes: organized }, floatingTexts, inkAnnotations);
               showToast('Diagrama organizado');
             }}
             className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -773,6 +1061,7 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
               historyIndex <= 0 &&
               graph.nodes.length === 0 &&
               floatingTexts.length === 0 &&
+              inkAnnotations.length === 0 &&
               pendingInkStrokesRef.current.length === 0
             }
             className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
@@ -783,7 +1072,7 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
           </button>
 
           {/* Delete selected */}
-          {(selectedNodeId || selectedEdgeId || selectedTextId) && (
+          {(selectedNodeId || selectedEdgeId || selectedTextId || selectedInkId) && (
             <button
               type="button"
               onClick={deleteSelected}
@@ -838,30 +1127,30 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
       </div>
 
       {/* Predictive Instructions Banner */}
-      <div className="px-4 py-1.5 bg-gradient-to-r from-blue-50/80 via-indigo-50/80 to-purple-50/80 dark:from-slate-900 dark:via-blue-950/20 dark:to-slate-900 border-b border-blue-100/60 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-300 flex items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-3 overflow-x-auto [scrollbar-width:none]">
+      <div className="px-3 md:px-4 py-1.5 bg-gradient-to-r from-blue-50/80 via-indigo-50/80 to-purple-50/80 dark:from-slate-900 dark:via-blue-950/20 dark:to-slate-900 border-b border-blue-100/60 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-300 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 shrink-0">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <span className="font-bold text-blue-700 dark:text-blue-300 flex items-center gap-1 shrink-0">
             <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-            Lienzo Predictivo Activo:
+            Lienzo Predictivo:
           </span>
           <span className="flex items-center gap-1 shrink-0">
-            <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">1</span>
-            Escribe palabras con el lápiz y se transforman en <strong>texto de teclado</strong>.
+            <span className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center shrink-0">1</span>
+            <span>Palabras: <strong>quedan manuscritas</strong></span>
           </span>
           <span className="text-slate-300 hidden sm:inline">•</span>
           <span className="flex items-center gap-1 shrink-0">
-            <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">2</span>
-            Dibuja cuadros, círculos o figuras y se convierten en <strong>figuras perfectas</strong>.
+            <span className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center shrink-0">2</span>
+            <span>Formas cerradas: <strong>figuras perfectas</strong></span>
           </span>
           <span className="text-slate-300 hidden md:inline">•</span>
           <span className="flex items-center gap-1 shrink-0">
-            <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">3</span>
-            Traza flechas o líneas para <strong>unirlas digitalmente</strong>.
+            <span className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center shrink-0">3</span>
+            <span>Líneas: <strong>flechas conectoras</strong></span>
           </span>
         </div>
 
-        <div className="text-[10px] text-slate-400 font-medium shrink-0">
-          {graph.nodes.length} figuras • {graph.edges.length} flechas • {floatingTexts.length} textos
+        <div className="text-[10px] text-slate-400 font-medium shrink-0 ml-auto">
+          {graph.nodes.length} figuras • {inkAnnotations.length} manuscritos • {floatingTexts.length} textos
         </div>
       </div>
 
@@ -1074,6 +1363,95 @@ export const SmartDiagramStudio: React.FC<SmartDiagramStudioProps> = ({
                   />
                 ) : (
                   <span>{item.text}</span>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Preserved Handwritten Ink Annotations (words & handwriting kept on canvas) */}
+          {inkAnnotations.map((ann) => {
+            const isSelected = selectedInkId === ann.id;
+            return (
+              <div
+                key={ann.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedInkId(ann.id);
+                  setSelectedNodeId(null);
+                  setSelectedEdgeId(null);
+                  setSelectedTextId(null);
+                }}
+                className={`absolute pointer-events-auto cursor-pointer rounded-lg transition-all ${
+                  isSelected ? 'ring-2 ring-blue-500 bg-blue-50/20 shadow-xs' : 'hover:bg-slate-500/10'
+                }`}
+                style={{
+                  left: `${ann.bounds.minX - 6}px`,
+                  top: `${ann.bounds.minY - 6}px`,
+                  width: `${Math.max(30, ann.bounds.width + 12)}px`,
+                  height: `${Math.max(20, ann.bounds.height + 12)}px`,
+                }}
+              >
+                {/* SVG of handwritten strokes inside this annotation */}
+                <svg
+                  className="w-full h-full overflow-visible pointer-events-none"
+                  viewBox={`${ann.bounds.minX - 6} ${ann.bounds.minY - 6} ${Math.max(30, ann.bounds.width + 12)} ${Math.max(20, ann.bounds.height + 12)}`}
+                >
+                  {ann.strokes.map((stroke, sIdx) => {
+                    if (stroke.points.length < 2) return null;
+                    const d = stroke.points.reduce(
+                      (acc, pt, i) => `${acc} ${i === 0 ? 'M' : 'L'} ${pt.x} ${pt.y}`,
+                      ''
+                    );
+                    return (
+                      <path
+                        key={sIdx}
+                        d={d}
+                        stroke={isSelected ? '#2563eb' : stroke.color || ann.color || currentColor}
+                        strokeWidth={stroke.size || 3}
+                        fill="none"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    );
+                  })}
+                </svg>
+
+                {/* Floating Action Chip when Selected */}
+                {isSelected && (
+                  <div
+                    className="absolute -top-11 left-0 z-40 flex items-center gap-1.5 bg-white dark:bg-slate-800 shadow-xl rounded-xl px-2.5 py-1 border border-slate-200 dark:border-slate-700 text-xs whitespace-nowrap animate-in fade-in"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-center gap-1 text-[11px] font-bold text-slate-700 dark:text-slate-200 pr-1.5 border-r border-slate-200 dark:border-slate-700">
+                      <Pen className="w-3 h-3 text-amber-500" />
+                      <span>Manuscrito</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        convertInkAnnotationToDigitalText(ann);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1 transition-colors shadow-2xs active:scale-95"
+                      title="Convertir esta palabra manuscrita a texto digital con OCR"
+                    >
+                      <Type className="w-3.5 h-3.5" />
+                      <span>{ann.recognizedText ? `Digitalizar: "${ann.recognizedText}"` : 'Digitalizar a texto'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteSelected();
+                      }}
+                      className="p-1 rounded-md text-red-500 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors"
+                      title="Eliminar trazo manuscrito"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 )}
               </div>
             );
