@@ -2,9 +2,19 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
+
+// Prevent unhandled errors from crashing the server on Render/cloud hosts
+process.on('uncaughtException', (err) => {
+  console.error('[NotaScribe Server] Excepción no capturada:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.warn('[NotaScribe Server] Rechazo de promesa no controlado:', reason);
+});
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -401,22 +411,93 @@ ${text}
 
 // Start server with Vite middleware in dev or static files in prod
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
+  const distPath = path.resolve(__dirname, 'dist');
+  const indexPath = path.resolve(distPath, 'index.html');
+
+  // Detect production environment:
+  // Render sets process.env.RENDER = 'true'
+  // Other platforms set NODE_ENV = 'production' or RAILWAY_ENVIRONMENT
+  const isProduction =
+    process.env.NODE_ENV === 'production' ||
+    Boolean(process.env.RENDER) ||
+    Boolean(process.env.RAILWAY_ENVIRONMENT) ||
+    (process.env.NODE_ENV !== 'development' && fs.existsSync(indexPath));
+
+  if (!isProduction) {
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+      console.log('NotaScribe dev server initialized with Vite middleware.');
+    } catch (err) {
+      console.warn('Failed to load Vite dev middleware, falling back to static files:', err);
+      if (fs.existsSync(distPath)) {
+        app.use(express.static(distPath));
+      }
+    }
   } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (req, res) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+    console.log('NotaScribe running in PRODUCTION mode. Serving static bundle from /dist');
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath, { maxAge: '1d', index: false }));
+    }
+
+    // Serve SPA index.html for all non-API GET requests
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api')) {
+        return next();
+      }
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(503).send(`
+          <!DOCTYPE html>
+          <html lang="es">
+            <head>
+              <meta charset="utf-8" />
+              <title>NotaScribe Tablet - Iniciando</title>
+              <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            </head>
+            <body style="font-family: system-ui, sans-serif; text-align: center; padding: 48px 16px; background: #0f172a; color: #f8fafc;">
+              <h1 style="font-size: 24px; margin-bottom: 12px;">NotaScribe Tablet</h1>
+              <p style="color: #94a3b8; font-size: 16px; max-width: 480px; margin: 0 auto 24px;">
+                El sistema se está iniciando. Si es tu primer despliegue en Render, asegúrate de haber configurado el comando de compilación:
+              </p>
+              <div style="background: #1e293b; padding: 12px 20px; border-radius: 8px; display: inline-block; font-family: monospace; color: #38bdf8;">
+                npm install && npm run build
+              </div>
+              <p style="margin-top: 24px;">
+                <button onclick="location.reload()" style="background: #3b82f6; color: white; border: none; padding: 10px 24px; border-radius: 6px; cursor: pointer; font-size: 15px;">
+                  Recargar página
+                </button>
+              </p>
+            </body>
+          </html>
+        `);
+      }
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`NotaScribe Tablet server running on http://0.0.0.0:${PORT}`);
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`NotaScribe Tablet server running on http://0.0.0.0:${PORT} (Node ${process.version})`);
+  });
+
+  // Graceful shutdown on Render/container termination
+  process.on('SIGTERM', () => {
+    console.log('SIGTERM signal received: closing HTTP server');
+    server.close(() => {
+      console.log('HTTP server closed');
+      process.exit(0);
+    });
+  });
+
+  process.on('SIGINT', () => {
+    console.log('SIGINT signal received: closing HTTP server');
+    server.close(() => {
+      process.exit(0);
+    });
   });
 }
 
