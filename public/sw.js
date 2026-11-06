@@ -50,6 +50,15 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   if (!event.request.url.startsWith('http')) return;
 
+  // Never intercept Vite dev scripts or hot updates to prevent stale reload loops
+  if (
+    event.request.url.includes('/@') ||
+    event.request.url.includes('/src/') ||
+    event.request.url.includes('hot-update')
+  ) {
+    return;
+  }
+
   // For API endpoints, prefer fresh network; do not cache AI mutations
   if (event.request.url.includes('/api/')) {
     event.respondWith(

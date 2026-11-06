@@ -47,7 +47,10 @@ export const VoiceAudioRecorder: React.FC<VoiceAudioRecorderProps> = ({
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
 
-  // Initialize SpeechRecognition
+  const isRecordingRef = useRef<boolean>(false);
+  isRecordingRef.current = isRecording;
+
+  // Initialize SpeechRecognition once on mount
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -55,46 +58,49 @@ export const VoiceAudioRecorder: React.FC<VoiceAudioRecorderProps> = ({
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'es-ES'; // Spanish
+      try {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'es-ES'; // Spanish
 
-      recognition.onresult = (event: any) => {
-        let interim = '';
-        let currentFinal = '';
+        recognition.onresult = (event: any) => {
+          let interim = '';
+          let currentFinal = '';
 
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            currentFinal += event.results[i][0].transcript + ' ';
-          } else {
-            interim += event.results[i][0].transcript;
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              currentFinal += event.results[i][0].transcript + ' ';
+            } else {
+              interim += event.results[i][0].transcript;
+            }
           }
-        }
 
-        if (currentFinal) {
-          const cleanPunct = predictPunctuation(currentFinal);
-          setFinalTranscript((prev) => (prev ? prev + ' ' + cleanPunct : cleanPunct));
-        }
-        setLiveTranscript(interim);
-      };
-
-      recognition.onerror = (event: any) => {
-        console.warn('Speech recognition warning/error:', event.error);
-      };
-
-      recognition.onend = () => {
-        if (isRecording) {
-          // Restart if still marked as recording
-          try {
-            recognition.start();
-          } catch {
-            // ignore
+          if (currentFinal) {
+            const cleanPunct = predictPunctuation(currentFinal);
+            setFinalTranscript((prev) => (prev ? prev + ' ' + cleanPunct : cleanPunct));
           }
-        }
-      };
+          setLiveTranscript(interim);
+        };
 
-      recognitionRef.current = recognition;
+        recognition.onerror = (event: any) => {
+          console.warn('Speech recognition warning/error:', event.error);
+        };
+
+        recognition.onend = () => {
+          if (isRecordingRef.current) {
+            try {
+              recognition.start();
+            } catch {
+              // ignore if already started or blocked
+            }
+          }
+        };
+
+        recognitionRef.current = recognition;
+      } catch (e) {
+        console.warn('SpeechRecognition initialization warning:', e);
+      }
     }
 
     return () => {
@@ -104,7 +110,7 @@ export const VoiceAudioRecorder: React.FC<VoiceAudioRecorderProps> = ({
         } catch {}
       }
     };
-  }, [isRecording]);
+  }, []);
 
   // Start recording voice
   const startRecording = async () => {

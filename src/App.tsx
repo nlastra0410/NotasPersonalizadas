@@ -21,70 +21,90 @@ import { extractTasksFromText } from './utils/taskManager';
 import { textLinesToConceptNodes } from './utils/conceptMap';
 import { PanelLeftOpen } from 'lucide-react';
 
-export default function App() {
-  // Local-only state, initialized strictly from localStorage or clean initial data
-  const [notes, setNotes] = useState<NoteItem[]>(() => {
-    const saved = localStorage.getItem('notascribe_notes');
-    if (saved) {
+// Helper to safely write to localStorage without throwing QuotaExceededError or crashing React
+function safeSaveToStorage(key: string, data: any) {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (err: any) {
+    console.warn(`[NotaScribe] Advertencia de almacenamiento para ${key}:`, err);
+    if (err?.name === 'QuotaExceededError' || err?.code === 22) {
       try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.some((n: any) => n.title?.includes('Arquitectura de App') || n.title?.includes('Biología Celular'))) {
-          localStorage.removeItem('notascribe_notes');
-          return initialNotes;
+        if (key === 'notascribe_notes' && Array.isArray(data)) {
+          // Prune older stroke arrays to fit within mobile/tablet quota
+          const streamlined = data.map((n: NoteItem) => ({
+            ...n,
+            strokes: (n.strokes || []).slice(-200),
+          }));
+          localStorage.setItem(key, JSON.stringify(streamlined));
         }
-        return parsed;
-      } catch {}
+      } catch (inner) {
+        console.warn('[NotaScribe] Quota de almacenamiento al límite. Los datos siguen activos en memoria de sesión.');
+      }
+    }
+  }
+}
+
+export default function App() {
+  // Local-only state, initialized strictly with error protection
+  const [notes, setNotes] = useState<NoteItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('notascribe_notes');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const valid = parsed.filter((n: any) => n && typeof n === 'object' && n.id);
+          if (valid.length > 0) return valid;
+        }
+      }
+    } catch (e) {
+      console.warn('[NotaScribe] Error inicializando notas:', e);
     }
     return initialNotes;
   });
 
   const [notebooks, setNotebooks] = useState<Notebook[]>(() => {
-    const saved = localStorage.getItem('notascribe_notebooks');
-    if (saved) {
-      try {
+    try {
+      const saved = localStorage.getItem('notascribe_notebooks');
+      if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.some((nb: any) => nb.id === 'nb-estudio' || nb.id === 'nb-ideas')) {
-          localStorage.removeItem('notascribe_notebooks');
-          return initialNotebooks;
-        }
-        return parsed;
-      } catch {}
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.warn('[NotaScribe] Error inicializando cuadernos:', e);
     }
     return initialNotebooks;
   });
 
   const [activeNoteId, setActiveNoteId] = useState<string>(() => {
-    const saved = localStorage.getItem('notascribe_active_note_id');
-    if (saved && notes.some((n) => n.id === saved)) return saved;
+    try {
+      const saved = localStorage.getItem('notascribe_active_note_id');
+      if (saved && notes.some((n) => n.id === saved)) return saved;
+    } catch {}
     return notes[0]?.id || initialNotes[0]?.id || '';
   });
 
   const [tasks, setTasks] = useState<TaskItem[]>(() => {
-    const saved = localStorage.getItem('notascribe_tasks');
-    if (saved) {
-      try {
+    try {
+      const saved = localStorage.getItem('notascribe_tasks');
+      if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.some((t: any) => t.id === 'task-1' || t.text?.includes('sensibilidad'))) {
-          localStorage.removeItem('notascribe_tasks');
-          return initialTasks;
-        }
-        return parsed;
-      } catch {}
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.warn('[NotaScribe] Error inicializando tareas:', e);
     }
     return initialTasks;
   });
 
   const [conceptGraph, setConceptGraph] = useState<ConceptGraph>(() => {
-    const saved = localStorage.getItem('notascribe_concept_graph');
-    if (saved) {
-      try {
+    try {
+      const saved = localStorage.getItem('notascribe_concept_graph');
+      if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.nodes && parsed.nodes.some((n: any) => n.id === 'node-core')) {
-          localStorage.removeItem('notascribe_concept_graph');
-          return initialConceptGraph;
-        }
-        return parsed;
-      } catch {}
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch (e) {
+      console.warn('[NotaScribe] Error inicializando mapa conceptual:', e);
     }
     return initialConceptGraph;
   });
@@ -111,25 +131,30 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Persistence effects
+  // Debounced persistence effects to prevent blocking drawing loops and avoid QuotaExceeded
   useEffect(() => {
-    localStorage.setItem('notascribe_notes', JSON.stringify(notes));
+    const timer = setTimeout(() => {
+      safeSaveToStorage('notascribe_notes', notes);
+    }, 400);
+    return () => clearTimeout(timer);
   }, [notes]);
 
   useEffect(() => {
-    localStorage.setItem('notascribe_notebooks', JSON.stringify(notebooks));
+    safeSaveToStorage('notascribe_notebooks', notebooks);
   }, [notebooks]);
 
   useEffect(() => {
-    localStorage.setItem('notascribe_active_note_id', activeNoteId);
+    try {
+      localStorage.setItem('notascribe_active_note_id', activeNoteId);
+    } catch {}
   }, [activeNoteId]);
 
   useEffect(() => {
-    localStorage.setItem('notascribe_tasks', JSON.stringify(tasks));
+    safeSaveToStorage('notascribe_tasks', tasks);
   }, [tasks]);
 
   useEffect(() => {
-    localStorage.setItem('notascribe_concept_graph', JSON.stringify(conceptGraph));
+    safeSaveToStorage('notascribe_concept_graph', conceptGraph);
   }, [conceptGraph]);
 
   // Active note object

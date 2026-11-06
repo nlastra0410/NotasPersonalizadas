@@ -601,9 +601,12 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
       setHistory((prev) => {
         const newHist = prev.slice(0, historyIndex + 1);
         newHist.push(newStrokes);
+        if (newHist.length > 25) {
+          newHist.shift();
+        }
         return newHist;
       });
-      setHistoryIndex((prev) => prev + 1);
+      setHistoryIndex((prev) => Math.min(prev + 1, 24));
 
       // Reconcile canvas once stroke is committed
       redraw();
@@ -870,6 +873,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
     onStrokesChange([]);
     const newHistory = history.slice(0, historyIndex + 1);
     newHistory.push([]);
+    if (newHistory.length > 25) newHistory.shift();
     setHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
     setRecognizedText('');
